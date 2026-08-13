@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Asesmen Sumatif",
+  "description": "Aplikasi asesmen sumatif pilihan ganda anti-kecurangan dengan timer, penguncian layar, enkripsi jawaban real-time, dashboard admin, import soal Word/Excel, dan ekspor PDF/Excel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

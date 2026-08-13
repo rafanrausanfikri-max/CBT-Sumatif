@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "exams": {
+      "title": "Exams",
+      "description": "Daftar ujian / asesmen sumatif yang dibuat oleh guru",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "gradeClass": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "passCode": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "antiCheatEnabled": { "type": "boolean" },
+        "maxViolations": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "questionCount": { "type": "number" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "questionText": { "type": "string" },
+              "options": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "correctAnswer": { "type": "number" },
+              "points": { "type": "number" },
+              "explanation": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["title", "durationMinutes", "passCode"]
+    },
+    "submissions": {
+      "title": "Submissions",
+      "description": "Hasil dan status pengerjaan asesmen oleh siswa",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClass": { "type": "string" },
+        "nis": { "type": "string" },
+        "encryptedAnswers": { "type": "string" },
+        "checksum": { "type": "string" },
+        "score": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "status": { "type": "string" },
+        "startedAt": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "remainingSeconds": { "type": "number" },
+        "violationCount": { "type": "number" },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": { "type": "string" },
+              "type": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "isLocked": { "type": "boolean" },
+        "lockedReason": { "type": "string" }
+      },
+      "required": ["examId", "studentName", "status"]
+    },
+    "violations_log": {
+      "title": "Violations Log",
+      "description": "Log pelanggaran siswa secara real-time untuk notifikasi guru",
+      "type": "object",
+      "properties": {
+        "examId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentClass": { "type": "string" },
+        "type": { "type": "string" },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["examId", "studentName", "type"]
+    },
+    "students": {
+      "title": "Students",
+      "description": "Database master data siswa SMA Negeri 2 Ciamis",
+      "type": "object",
+      "properties": {
+        "nis": { "type": "string" },
+        "nisn": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string" },
+        "studentClass": { "type": "string" }
+      },
+      "required": ["nis", "name", "studentClass"]
+    }
+  }
+}
