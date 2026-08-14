@@ -71,21 +71,79 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
     initialSubmission?.id || `sub_${exam.id}_${studentName.trim().replace(/\s+/g, '_')}_${nis}`
   );
 
-  // Request Fullscreen on mount
+  // Helper to test if browser is currently in fullscreen
+  const checkIsFullscreen = () => {
+    const doc = document as any;
+    return Boolean(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+  };
+
+  // Request Fullscreen across all browser vendors
   const enterFullscreen = async () => {
     try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
+      const docEl = document.documentElement as any;
+      if (docEl.requestFullscreen) {
+        await docEl.requestFullscreen();
+      } else if (docEl.webkitRequestFullscreen) {
+        await docEl.webkitRequestFullscreen();
+      } else if (docEl.mozRequestFullScreen) {
+        await docEl.mozRequestFullScreen();
+      } else if (docEl.msRequestFullscreen) {
+        await docEl.msRequestFullscreen();
       }
       setIsFullscreen(true);
     } catch (e) {
-      console.warn('Fullscreen request bypassed or denied:', e);
+      console.warn('Fullscreen request bypassed or requires gesture:', e);
+      setIsFullscreen(checkIsFullscreen());
     }
   };
 
+  // Auto-request Fullscreen immediately upon mount & fallback on next gesture if restricted
   useEffect(() => {
     enterFullscreen();
+
+    // Secondary automatic trigger on very first click/tap if initial browser policy blocked it
+    const handleGestureFullscreen = () => {
+      if (!checkIsFullscreen()) {
+        enterFullscreen();
+      }
+    };
+
+    document.addEventListener('click', handleGestureFullscreen, { once: true });
+    document.addEventListener('touchstart', handleGestureFullscreen, { once: true });
+
+    return () => {
+      document.removeEventListener('click', handleGestureFullscreen);
+      document.removeEventListener('touchstart', handleGestureFullscreen);
+    };
   }, []);
+
+  // Prevent browser Back/Forward navigation & accidental page unload
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+      handleViolation('NAVIGATION_ATTEMPT', 'Mencoba menekan tombol kembali / navigasi browser');
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Ujian sedang berlangsung! Keluar akan membatalkan ujian Anda.';
+      return e.returnValue;
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [exam.antiCheatEnabled, violationCount, isLocked]);
 
   // Sync / Auto-save to Firestore with AES Encryption
   const syncSubmissionToFirestore = async (
@@ -225,7 +283,8 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
 
     // 3. Fullscreen Exit
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement) {
+      const activeFullscreen = checkIsFullscreen();
+      if (!activeFullscreen) {
         setIsFullscreen(false);
         handleViolation('FULLSCREEN_EXIT', 'Keluar dari mode layar penuh (fullscreen)');
       } else {
@@ -233,13 +292,16 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
       }
     };
 
-    // 4. Keyboard Shortcuts Block (Alt+Tab, Ctrl+C, Ctrl+V, F12, Escape)
+    // 4. Keyboard Shortcuts Block (Alt+Tab, Ctrl+C, Ctrl+V, F11, F12, Escape, Windows key)
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.altKey ||
-        (e.ctrlKey && ['c', 'v', 'x', 'a', 't', 'n', 'w', 'p', 's', 'r', 'u'].includes(e.key.toLowerCase())) ||
+        e.metaKey ||
+        e.key === 'F11' ||
         e.key === 'F12' ||
-        (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].includes(e.key.toUpperCase()))
+        e.key === 'Escape' ||
+        (e.ctrlKey && ['c', 'v', 'x', 'a', 't', 'n', 'w', 'p', 's', 'r', 'u', 'j', 'i', 'h'].includes(e.key.toLowerCase())) ||
+        (e.ctrlKey && e.shiftKey && ['I', 'J', 'C', 'S'].includes(e.key.toUpperCase()))
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -256,6 +318,9 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
     window.addEventListener('keydown', handleKeyDown, true);
     document.addEventListener('contextmenu', handleContextMenu);
 
@@ -263,6 +328,9 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       window.removeEventListener('keydown', handleKeyDown, true);
       document.removeEventListener('contextmenu', handleContextMenu);
     };
@@ -566,6 +634,31 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
         </div>
 
       </div>
+
+      {/* Fullscreen Required Modal / Enforcement Overlay */}
+      {!isFullscreen && !isLocked && exam.antiCheatEnabled && (
+        <div className="fixed inset-0 z-45 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-indigo-500/50 rounded-2xl max-w-md w-full p-6 sm:p-8 text-center space-y-5 shadow-2xl">
+            <div className="w-16 h-16 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl flex items-center justify-center text-indigo-400 mx-auto">
+              <Maximize className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-xl text-white">Mode Layar Penuh Wajib</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                Ujian ini menerapkan sistem pengawasan ketat. Anda wajib berada dalam mode <strong>Layar Penuh (Fullscreen)</strong> agar tidak dapat beralih aplikasi atau membuka jendela lain.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={enterFullscreen}
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+            >
+              <Maximize className="w-4 h-4" />
+              <span>Kunci Layar Penuh & Lanjutkan Ujian</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Warning Modal for Anti-Cheat Violation */}
       {showWarningModal && !isLocked && (

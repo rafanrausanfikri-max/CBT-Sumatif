@@ -40,7 +40,7 @@ export interface Exam {
 
 export interface ViolationRecord {
   timestamp: string;
-  type: 'TAB_SWITCH' | 'WINDOW_BLUR' | 'FULLSCREEN_EXIT' | 'KEYBOARD_SHORTCUT' | 'CONTEXT_MENU' | 'DEVTOOLS';
+  type: 'TAB_SWITCH' | 'WINDOW_BLUR' | 'FULLSCREEN_EXIT' | 'KEYBOARD_SHORTCUT' | 'CONTEXT_MENU' | 'DEVTOOLS' | 'NAVIGATION_ATTEMPT';
   description: string;
 }
 

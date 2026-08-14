@@ -99,6 +99,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
 
   const handleConfirmAndStart = () => {
     if (selectedExam) {
+      // Attempt immediate fullscreen request directly from user gesture
+      try {
+        const docEl = document.documentElement as any;
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Initial fullscreen gesture error:', err);
+      }
       onStartExam(selectedExam, studentName, nis, studentClass);
     }
   };
