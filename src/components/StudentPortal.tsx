@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Exam, Student } from '../types';
-import { subscribeStudents } from '../services/examService';
+import { subscribeStudents, subscribeClasses } from '../services/examService';
 import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School } from 'lucide-react';
 
 interface StudentPortalProps {
@@ -9,7 +9,7 @@ interface StudentPortalProps {
 }
 
 export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam }) => {
-  const [selectedExamId, setSelectedExamId] = useState<string>(exams[0]?.id || '');
+  const [selectedExamId, setSelectedExamId] = useState<string>('');
   const [studentName, setStudentName] = useState('');
   const [nis, setNis] = useState('');
   const [studentClass, setStudentClass] = useState('XII F-1');
@@ -17,20 +17,29 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
   const [errorMessage, setErrorMessage] = useState('');
   const [showAgreementModal, setShowAgreementModal] = useState(false);
 
-  // Student DB Lookup
+  // Student DB Lookup & Classes
   const [dbStudents, setDbStudents] = useState<Student[]>([]);
+  const [classesList, setClassesList] = useState<string[]>([]);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
   useEffect(() => {
-    const unsub = subscribeStudents((students) => {
+    const unsubStudents = subscribeStudents((students) => {
       setDbStudents(students);
     });
-    return () => unsub();
+    const unsubClasses = subscribeClasses((classes) => {
+      setClassesList(classes);
+    });
+    return () => {
+      unsubStudents();
+      unsubClasses();
+    };
   }, []);
 
-  // Extract unique classes list
-  const availableClasses = Array.from(new Set(dbStudents.map(s => s.studentClass))).sort();
+  // Extract unique classes list combining custom classes & student classes
+  const availableClasses = Array.from(
+    new Set([...classesList, ...dbStudents.map(s => s.studentClass)])
+  ).filter(Boolean).sort();
 
   // Students in selected class
   const studentsInClass = selectedClassFilter
@@ -60,22 +69,22 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
   };
 
   const activeExams = exams.filter(e => e.isActive);
-  const selectedExam = activeExams.find(e => e.id === selectedExamId) || activeExams[0];
+  const selectedExam = activeExams.find(e => e.id === selectedExamId);
 
   const handleValidateForm = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
+    if (!selectedExam) {
+      setErrorMessage('Silakan pilih mata pelajaran / ujian terlebih dahulu.');
+      return;
+    }
     if (!studentName.trim()) {
       setErrorMessage('Silakan masukkan nama lengkap siswa.');
       return;
     }
     if (!nis.trim()) {
       setErrorMessage('Silakan masukkan NIS / Nomor Induk Siswa.');
-      return;
-    }
-    if (!selectedExam) {
-      setErrorMessage('Tidak ada ujian aktif yang dipilih.');
       return;
     }
 
@@ -129,11 +138,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
                 <select
                   value={selectedExamId}
                   onChange={(e) => setSelectedExamId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
                 >
+                  <option value="">Pilih Mata Pelajaran/Ujian</option>
                   {activeExams.map((exam) => (
                     <option key={exam.id} value={exam.id}>
-                      {exam.subject} — {exam.title} ({exam.gradeClass})
+                      {exam.subject || exam.title}
                     </option>
                   ))}
                 </select>

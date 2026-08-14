@@ -15,7 +15,10 @@ import {
   subscribeStudents,
   addStudent,
   deleteStudent,
-  seedInitialStudents
+  seedInitialStudents,
+  subscribeClasses,
+  addSchoolClass,
+  deleteSchoolClass
 } from '../services/examService';
 import {
   parseExcelQuestions,
@@ -47,6 +50,7 @@ import {
   Image as ImageIcon,
   Eye,
   Check,
+  GraduationCap,
   X
 } from 'lucide-react';
 
@@ -86,13 +90,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isSeedingStudents, setIsSeedingStudents] = useState(false);
   const [studentSuccessMsg, setStudentSuccessMsg] = useState('');
 
-  // Subscribe to students real-time
+  // Class Management States
+  const [classesList, setClassesList] = useState<string[]>([]);
+  const [showAddClassModal, setShowAddClassModal] = useState(false);
+  const [newClassNameInput, setNewClassNameInput] = useState('');
+  const [isAddingClass, setIsAddingClass] = useState(false);
+  const [classSuccessMsg, setClassSuccessMsg] = useState('');
+  const [classErrorMsg, setClassErrorMsg] = useState('');
+
+  // Subscribe to students and classes real-time
   useEffect(() => {
     const unsubStudents = subscribeStudents((data) => {
       setStudentsList(data);
     });
-    return () => unsubStudents();
+    const unsubClasses = subscribeClasses((data) => {
+      setClassesList(data);
+    });
+    return () => {
+      unsubStudents();
+      unsubClasses();
+    };
   }, []);
+
+  // Combined unique sorted classes
+  const availableClassOptions = Array.from(
+    new Set([...classesList, ...studentsList.map(s => s.studentClass)])
+  ).filter(Boolean).sort();
 
   // Automatically mark violation notifications read when teacher opens dashboard
   useEffect(() => {
@@ -133,7 +156,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setPinErrorMsg('');
     setPinSuccessMsg('');
 
-    if (currentPinInput.trim() !== adminPin && currentPinInput.trim() !== '123456') {
+    if (currentPinInput.trim() !== adminPin) {
       setPinErrorMsg('PIN lama yang Anda masukkan salah!');
       return;
     }
@@ -443,6 +466,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Class Management Operations
+  const handleAddClassSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const formatted = newClassNameInput.trim().toUpperCase();
+    if (!formatted) {
+      setClassErrorMsg('Nama kelas / rombel tidak boleh kosong.');
+      return;
+    }
+    if (availableClassOptions.includes(formatted)) {
+      setClassErrorMsg(`Kelas "${formatted}" sudah ada dalam daftar.`);
+      return;
+    }
+    setClassErrorMsg('');
+    setIsAddingClass(true);
+    try {
+      await addSchoolClass(formatted);
+      setClassSuccessMsg(`Kelas "${formatted}" berhasil ditambahkan!`);
+      setNewClassNameInput('');
+      setShowAddClassModal(false);
+      setTimeout(() => setClassSuccessMsg(''), 4000);
+    } catch (err: any) {
+      setClassErrorMsg(err?.message || 'Gagal menambahkan kelas.');
+    } finally {
+      setIsAddingClass(false);
+    }
+  };
+
+  const handleDeleteClass = async (classNameToDelete: string) => {
+    const studentsInClass = studentsList.filter(s => s.studentClass === classNameToDelete).length;
+    let confirmMsg = `Apakah Anda yakin ingin menghapus kelas "${classNameToDelete}" dari master rombel?`;
+    if (studentsInClass > 0) {
+      confirmMsg = `Kelas "${classNameToDelete}" memiliki ${studentsInClass} siswa terdaftar. Jika dihapus dari daftar rombel utama, data siswa tetap aman. Hapus kelas?`;
+    }
+    if (confirm(confirmMsg)) {
+      try {
+        await deleteSchoolClass(classNameToDelete);
+        setClassSuccessMsg(`Kelas "${classNameToDelete}" berhasil dihapus.`);
+        setTimeout(() => setClassSuccessMsg(''), 3000);
+      } catch (err: any) {
+        alert('Gagal menghapus kelas: ' + (err?.message || String(err)));
+      }
+    }
+  };
+
   // Summary Metrics
   const totalSubmissions = examSubmissions.length;
   const activeStudents = examSubmissions.filter(s => s.status === 'in_progress').length;
@@ -467,17 +534,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Exam Picker Filter & Ganti PIN */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center space-x-2">
-            <label className="text-xs text-slate-400 font-semibold whitespace-nowrap hidden sm:inline">
-              Pilih Asesmen:
-            </label>
             <select
               value={selectedExamId}
               onChange={(e) => onSelectExamId(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
+              <option value="">Pilih Mata Pelajaran/Ujian</option>
               {exams.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.subject} - {e.title}
+                  {e.subject || e.title}
                 </option>
               ))}
             </select>
@@ -827,17 +892,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* Filter Asesmen Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-800/40 p-4 rounded-xl border border-slate-800">
               <div className="flex items-center space-x-3 w-full sm:w-auto">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
-                  Pilih Asesmen:
-                </label>
                 <select
                   value={selectedExamId}
                   onChange={(e) => onSelectExamId(e.target.value)}
                   className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto cursor-pointer"
                 >
+                  <option value="">Pilih Mata Pelajaran/Ujian</option>
                   {exams.map((ex) => (
                     <option key={ex.id} value={ex.id}>
-                      {ex.subject} — {ex.title} ({ex.gradeClass})
+                      {ex.subject || ex.title}
                     </option>
                   ))}
                 </select>
@@ -1009,10 +1072,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'students' && (
         <div className="space-y-6">
           {/* Top Info Banner */}
-          {studentSuccessMsg && (
+          {(studentSuccessMsg || classSuccessMsg) && (
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs font-bold flex items-center space-x-2 animate-in fade-in">
               <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
-              <span>{studentSuccessMsg}</span>
+              <span>{studentSuccessMsg || classSuccessMsg}</span>
             </div>
           )}
 
@@ -1021,7 +1084,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             const totalCount = studentsList.length;
             const maleCount = studentsList.filter(s => s.gender === 'L').length;
             const femaleCount = studentsList.filter(s => s.gender === 'P').length;
-            const classList = Array.from(new Set(studentsList.map(s => s.studentClass)));
 
             return (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1039,11 +1101,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-1">
                   <p className="text-xs text-emerald-400 font-semibold uppercase">Total Kelas / Rombel</p>
-                  <p className="text-2xl font-black text-emerald-400">{classList.length}</p>
+                  <p className="text-2xl font-black text-emerald-400">{availableClassOptions.length}</p>
                 </div>
               </div>
             );
           })()}
+
+          {/* Class / Rombel Management Section */}
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center space-x-2 text-xs font-bold text-slate-200">
+                <GraduationCap className="w-4 h-4 text-indigo-400" />
+                <span>Daftar Kelas / Rombel Terdaftar ({availableClassOptions.length})</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewClassNameInput('');
+                  setClassErrorMsg('');
+                  setShowAddClassModal(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center space-x-1.5 transition shadow-md shadow-emerald-600/20 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tambah Kelas Manual</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setSelectedClassFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border cursor-pointer ${
+                  selectedClassFilter === 'ALL'
+                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+              >
+                Semua Kelas ({studentsList.length})
+              </button>
+
+              {availableClassOptions.map((cls) => {
+                const studentCount = studentsList.filter(s => s.studentClass === cls).length;
+                const isSelected = selectedClassFilter === cls;
+                return (
+                  <div
+                    key={cls}
+                    className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs border transition ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                        : 'bg-slate-800 hover:bg-slate-700/80 text-slate-200 border-slate-700'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedClassFilter(isSelected ? 'ALL' : cls)}
+                      className="font-bold flex items-center space-x-1.5 cursor-pointer"
+                    >
+                      <span>{cls}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-semibold ${
+                        isSelected ? 'bg-indigo-900/80 text-indigo-100' : 'bg-slate-700 text-slate-300'
+                      }`}>
+                        {studentCount}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClass(cls);
+                      }}
+                      className="text-slate-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer ml-1"
+                      title={`Hapus kelas ${cls}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Controls Bar: Search, Class Filter, Add Button, Seed Button */}
           <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1064,14 +1202,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <select
                 value={selectedClassFilter}
                 onChange={(e) => setSelectedClassFilter(e.target.value)}
-                className="w-full sm:w-48 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full sm:w-56 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
               >
-                <option value="ALL">Semua Kelas ({studentsList.length})</option>
-                <option value="XII F-1">Kelas XII F-1</option>
-                <option value="XII F-2">Kelas XII F-2</option>
-                <option value="XII F-3">Kelas XII F-3</option>
-                <option value="XII F-4">Kelas XII F-4</option>
-                <option value="XII F-5">Kelas XII F-5</option>
+                <option value="ALL">Semua Kelas ({studentsList.length} siswa)</option>
+                {availableClassOptions.map((cls) => (
+                  <option key={cls} value={cls}>
+                    Kelas {cls} ({studentsList.filter(s => s.studentClass === cls).length} siswa)
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -1088,12 +1226,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
 
               <button
+                type="button"
+                onClick={() => {
+                  setNewClassNameInput('');
+                  setClassErrorMsg('');
+                  setShowAddClassModal(true);
+                }}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center space-x-1.5 transition shadow-lg shadow-emerald-600/30 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tambah Kelas Manual</span>
+              </button>
+
+              <button
                 onClick={() => {
                   setNewStudentName('');
                   setNewStudentNis('');
                   setNewStudentNisn('');
                   setNewStudentGender('L');
-                  setNewStudentClass('XII F-1');
+                  setNewStudentClass(availableClassOptions[0] || 'XII F-1');
                   setShowAddStudentModal(true);
                 }}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-indigo-600/30 cursor-pointer"
@@ -2236,19 +2387,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">
-                    Kelas / Rombel *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-semibold text-slate-300">
+                      Kelas / Rombel *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewClassNameInput('');
+                        setClassErrorMsg('');
+                        setShowAddClassModal(true);
+                      }}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 cursor-pointer font-semibold"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>+ Buat Kelas Baru</span>
+                    </button>
+                  </div>
                   <select
                     value={newStudentClass}
                     onChange={(e) => setNewStudentClass(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer font-mono"
                   >
-                    <option value="XII F-1">XII F-1</option>
-                    <option value="XII F-2">XII F-2</option>
-                    <option value="XII F-3">XII F-3</option>
-                    <option value="XII F-4">XII F-4</option>
-                    <option value="XII F-5">XII F-5</option>
+                    {availableClassOptions.map((cls) => (
+                      <option key={cls} value={cls}>
+                        {cls}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2269,6 +2434,100 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   {isAddingStudent ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                   <span>{isAddingStudent ? 'Menyimpan...' : 'Simpan Data Siswa'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH KELAS MANUAL */}
+      {showAddClassModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+            <button
+              onClick={() => {
+                setShowAddClassModal(false);
+                setClassErrorMsg('');
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center space-x-3 text-emerald-400">
+              <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                <GraduationCap className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Tambah Kelas / Rombel Manual</h3>
+                <p className="text-xs text-slate-400">Daftarkan Nama Rombongan Belajar Baru</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddClassSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1">
+                  Nama Kelas / Rombel *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: XII F-6, XI F-1, X E-2, XII MIPA 1"
+                  value={newClassNameInput}
+                  onChange={(e) => setNewClassNameInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-500 uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                  autoFocus
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Format penamaan bebas: contoh <span className="font-mono text-slate-400">XII F-6</span>, <span className="font-mono text-slate-400">XI-A</span>, <span className="font-mono text-slate-400">X-1</span>, atau <span className="font-mono text-slate-400">XII MIPA 3</span>.
+                </p>
+              </div>
+
+              {/* Quick Suggestion Pills */}
+              <div>
+                <label className="block font-semibold text-slate-400 mb-1.5 text-[11px]">
+                  Saran Cepat:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['XII F-6', 'XII F-7', 'XI F-1', 'XI F-2', 'X E-1', 'X E-2', 'XII MIPA 1', 'XII IPS 1'].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setNewClassNameInput(suggestion)}
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] border border-slate-700/80 transition cursor-pointer font-mono"
+                    >
+                      + {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {classErrorMsg && (
+                <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-semibold">
+                  {classErrorMsg}
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddClassModal(false);
+                    setClassErrorMsg('');
+                  }}
+                  disabled={isAddingClass}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingClass}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-emerald-600/30 cursor-pointer disabled:opacity-50"
+                >
+                  {isAddingClass ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  <span>{isAddingClass ? 'Menyimpan...' : 'Simpan Kelas'}</span>
                 </button>
               </div>
             </form>

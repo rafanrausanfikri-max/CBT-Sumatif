@@ -22,12 +22,12 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    if (inputPin.trim() === adminPin || inputPin.trim() === '123456') {
+    if (inputPin.trim() === adminPin) {
       onSuccess();
       setInputPin('');
       onClose();
     } else {
-      setErrorMsg('PIN Administrator / Guru salah! Default PIN: 123456');
+      setErrorMsg('PIN Administrator / Guru salah!');
     }
   };
 
@@ -55,7 +55,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              PIN Guru (Default: 123456)
+              PIN Guru {adminPin === '123456' ? '(Default: 123456)' : ''}
             </label>
             <div className="relative">
               <input

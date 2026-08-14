@@ -520,24 +520,126 @@ export async function seedInitialStudents() {
   * Subscribe real-time to Teacher PIN settings
   */
 export function subscribeTeacherPin(callback: (pin: string) => void) {
+  const localPin = typeof window !== 'undefined' ? localStorage.getItem('cbt_teacher_pin') : null;
+  if (localPin) {
+    callback(localPin);
+  }
   const pinDocRef = doc(db, 'settings', 'teacherConfig');
   return onSnapshot(pinDocRef, (snapshot) => {
     if (snapshot.exists() && snapshot.data().pin) {
-      callback(snapshot.data().pin);
+      const pin = snapshot.data().pin;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cbt_teacher_pin', pin);
+      }
+      callback(pin);
+    } else if (localPin) {
+      callback(localPin);
     } else {
       callback('123456');
     }
   }, (err) => {
     console.error('Error subscribing to teacher PIN:', err);
-    callback('123456');
+    if (localPin) {
+      callback(localPin);
+    } else {
+      callback('123456');
+    }
   });
 }
 
 /**
-  * Update Teacher PIN in Firestore
-  */
+ * Update Teacher PIN in Firestore and local storage
+ */
 export async function updateTeacherPin(newPin: string) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('cbt_teacher_pin', newPin);
+  }
   const pinDocRef = doc(db, 'settings', 'teacherConfig');
   await setDoc(pinDocRef, { pin: newPin, updatedAt: new Date().toISOString() }, { merge: true });
 }
+
+export const DEFAULT_SCHOOL_CLASSES = ['XII F-1', 'XII F-2', 'XII F-3', 'XII F-4', 'XII F-5'];
+
+/**
+ * Subscribe real-time to School Classes
+ */
+export function subscribeClasses(callback: (classes: string[]) => void) {
+  const localClassesJson = typeof window !== 'undefined' ? localStorage.getItem('cbt_custom_classes') : null;
+  let localClasses: string[] = DEFAULT_SCHOOL_CLASSES;
+  if (localClassesJson) {
+    try {
+      const parsed = JSON.parse(localClassesJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        localClasses = parsed;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  callback(localClasses);
+
+  const classesDocRef = doc(db, 'settings', 'classesConfig');
+  return onSnapshot(classesDocRef, (snapshot) => {
+    if (snapshot.exists() && snapshot.data().classList && Array.isArray(snapshot.data().classList)) {
+      const dbClasses: string[] = snapshot.data().classList;
+      const combined = Array.from(new Set([...DEFAULT_SCHOOL_CLASSES, ...dbClasses])).filter(Boolean).sort();
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cbt_custom_classes', JSON.stringify(combined));
+      }
+      callback(combined);
+    } else {
+      callback(localClasses);
+    }
+  }, (err) => {
+    console.error('Error subscribing to classes:', err);
+    callback(localClasses);
+  });
+}
+
+/**
+ * Add a new school class manually
+ */
+export async function addSchoolClass(newClassName: string) {
+  const formatted = newClassName.trim().toUpperCase();
+  if (!formatted) return;
+
+  const classesDocRef = doc(db, 'settings', 'classesConfig');
+  const snap = await getDoc(classesDocRef);
+  let currentList = [...DEFAULT_SCHOOL_CLASSES];
+  if (snap.exists() && snap.data().classList && Array.isArray(snap.data().classList)) {
+    currentList = snap.data().classList;
+  }
+
+  if (!currentList.includes(formatted)) {
+    currentList.push(formatted);
+    currentList.sort();
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('cbt_custom_classes', JSON.stringify(currentList));
+  }
+
+  await setDoc(classesDocRef, { classList: currentList, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+/**
+ * Delete a school class
+ */
+export async function deleteSchoolClass(className: string) {
+  const classesDocRef = doc(db, 'settings', 'classesConfig');
+  const snap = await getDoc(classesDocRef);
+  let currentList = [...DEFAULT_SCHOOL_CLASSES];
+  if (snap.exists() && snap.data().classList && Array.isArray(snap.data().classList)) {
+    currentList = snap.data().classList;
+  }
+
+  const updatedList = currentList.filter(c => c !== className);
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('cbt_custom_classes', JSON.stringify(updatedList));
+  }
+
+  await setDoc(classesDocRef, { classList: updatedList, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
 

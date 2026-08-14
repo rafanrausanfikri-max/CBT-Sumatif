@@ -7,6 +7,12 @@ export interface Student {
   studentClass: string;
 }
 
+export interface SchoolClass {
+  id: string;
+  name: string;
+  createdAt?: string;
+}
+
 export interface Question {
   id: string;
   questionText: string;
