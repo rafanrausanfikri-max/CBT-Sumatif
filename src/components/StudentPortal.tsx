@@ -140,45 +140,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
           <form onSubmit={handleValidateForm} className="space-y-5">
             
-            {/* Exam Selector */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Pilih Mata Pelajaran / Ujian
-              </label>
-              {activeExams.length === 0 ? (
-                <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl text-center text-sm text-slate-400">
-                  Belum ada asesmen aktif dari guru. Silakan hubungi pengawas.
-                </div>
-              ) : (
-                <select
-                  value={selectedExamId}
-                  onChange={(e) => setSelectedExamId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
-                >
-                  <option value="">Pilih Mata Pelajaran/Ujian</option>
-                  {activeExams.map((exam) => (
-                    <option key={exam.id} value={exam.id}>
-                      {exam.subject || exam.title}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            {selectedExam && (
-              <div className="grid grid-cols-2 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-300">
-                <div className="flex items-center space-x-2">
-                  <Clock className="w-4 h-4 text-indigo-400" />
-                  <span>Durasi: <strong className="text-white">{selectedExam.durationMinutes} Menit</strong></span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <FileText className="w-4 h-4 text-sky-400" />
-                  <span>Jumlah: <strong className="text-white">{selectedExam.questions?.length || selectedExam.questionCount} Soal</strong></span>
-                </div>
-              </div>
-            )}
-
-            {/* Student Identitas */}
+            {/* Student Identitas & Selection from DB */}
             <div className="space-y-4">
               {/* Select Class then Select Student Name from Database */}
               {dbStudents.length > 0 && (
@@ -256,6 +218,46 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
                   )}
                 </div>
               )}
+
+              {/* Exam Selector (Placed after Pilih Data Siswa Terdaftar) */}
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Pilih Mata Pelajaran / Ujian *
+                  </label>
+                  {activeExams.length === 0 ? (
+                    <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl text-center text-sm text-slate-400">
+                      Belum ada asesmen aktif dari guru. Silakan hubungi pengawas.
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedExamId}
+                      onChange={(e) => setSelectedExamId(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition cursor-pointer"
+                    >
+                      <option value="">Pilih Mata Pelajaran/Ujian</option>
+                      {activeExams.map((exam) => (
+                        <option key={exam.id} value={exam.id}>
+                          {exam.subject || exam.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {selectedExam && (
+                  <div className="grid grid-cols-2 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-300">
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-4 h-4 text-indigo-400" />
+                      <span>Durasi: <strong className="text-white">{selectedExam.durationMinutes} Menit</strong></span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <FileText className="w-4 h-4 text-sky-400" />
+                      <span>Jumlah: <strong className="text-white">{selectedExam.questions?.length || selectedExam.questionCount} Soal</strong></span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
