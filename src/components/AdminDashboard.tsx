@@ -51,8 +51,10 @@ import {
   Eye,
   Check,
   GraduationCap,
+  QrCode,
   X
 } from 'lucide-react';
+import { ExamQRCodeModal } from './ExamQRCodeModal';
 
 interface AdminDashboardProps {
   exams: Exam[];
@@ -75,6 +77,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showExamModal, setShowExamModal] = useState(false);
   const [editingExam, setEditingExam] = useState<Partial<Exam> | null>(null);
+  const [selectedQrExam, setSelectedQrExam] = useState<Exam | null>(null);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // Student Database States
   const [studentsList, setStudentsList] = useState<Student[]>([]);
@@ -548,6 +552,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </select>
           </div>
 
+          {selectedExamId && (
+            <button
+              onClick={() => {
+                const ex = exams.find(e => e.id === selectedExamId);
+                if (ex) {
+                  setSelectedQrExam(ex);
+                  setShowQrModal(true);
+                }
+              }}
+              className="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 font-bold rounded-xl text-xs flex items-center space-x-1.5 transition cursor-pointer"
+              title="Tampilkan QR Code Ujian / Proyektor"
+            >
+              <QrCode className="w-4 h-4 text-indigo-400" />
+              <span>QR Code Asesmen</span>
+            </button>
+          )}
+
           <button
             onClick={() => {
               setCurrentPinInput('');
@@ -863,18 +884,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800">
-                  <span className={`font-semibold ${ex.isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
-                    {ex.isActive ? '● Status Aktif' : '○ Tidak Aktif'}
-                  </span>
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800 gap-2">
+                  <div className="flex items-center space-x-2">
+                    <span className={`font-semibold ${ex.isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {ex.isActive ? '● Aktif' : '○ Non-Aktif'}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setSelectedQrExam(ex);
+                        setShowQrModal(true);
+                      }}
+                      className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold flex items-center space-x-1 transition cursor-pointer"
+                      title="Tampilkan / Cetak QR Code Ujian Ini"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>QR Code</span>
+                    </button>
+                  </div>
+                  
                   <button
                     onClick={() => {
                       onSelectExamId(ex.id);
                       setActiveTab('reports');
                     }}
-                    className="text-indigo-400 hover:underline font-bold text-xs cursor-pointer flex items-center space-x-1"
+                    className="text-indigo-400 hover:underline font-bold text-xs cursor-pointer flex items-center space-x-1 shrink-0"
                   >
-                    <span>Lihat Hasil Submisi</span>
+                    <span>Hasil</span>
                     <span>&rarr;</span>
                   </button>
                 </div>
@@ -2534,6 +2569,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* QR Code Presentation Modal */}
+      <ExamQRCodeModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        exam={selectedQrExam}
+      />
 
     </div>
   );

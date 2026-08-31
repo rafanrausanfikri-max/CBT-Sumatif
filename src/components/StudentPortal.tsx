@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Exam, Student } from '../types';
 import { subscribeStudents, subscribeClasses } from '../services/examService';
-import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School } from 'lucide-react';
+import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School, QrCode, Sparkles, Scan } from 'lucide-react';
+import { QRScannerModal, ScannedQRData } from './QRScannerModal';
 
 interface StudentPortalProps {
   exams: Exam[];
@@ -16,6 +17,8 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
   const [passCodeInput, setPassCodeInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [qrSuccessNotice, setQrSuccessNotice] = useState<string>('');
 
   // Student DB Lookup & Classes
   const [dbStudents, setDbStudents] = useState<Student[]>([]);
@@ -97,6 +100,67 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
     setShowAgreementModal(true);
   };
 
+  const handleQRScanSuccess = (data: ScannedQRData) => {
+    setErrorMessage('');
+    let detectedDetails: string[] = [];
+
+    // 1. Auto-select or match Exam
+    if (data.examId) {
+      const foundExam = activeExams.find(e => e.id === data.examId);
+      if (foundExam) {
+        setSelectedExamId(foundExam.id);
+        detectedDetails.push(`Ujian: ${foundExam.subject}`);
+      }
+    } else if (data.passCode) {
+      const foundExam = activeExams.find(
+        e => e.passCode && e.passCode.toUpperCase() === data.passCode?.toUpperCase()
+      );
+      if (foundExam) {
+        setSelectedExamId(foundExam.id);
+        detectedDetails.push(`Ujian: ${foundExam.subject}`);
+      }
+    }
+
+    // 2. Auto-fill Token / Passcode
+    if (data.passCode) {
+      setPassCodeInput(data.passCode.toUpperCase());
+      detectedDetails.push(`Token: ${data.passCode.toUpperCase()}`);
+    }
+
+    // 3. Auto-select / fill Student Info if available
+    if (data.studentClass) {
+      setSelectedClassFilter(data.studentClass);
+      setStudentClass(data.studentClass);
+    }
+
+    if (data.nis) {
+      setNis(data.nis);
+      // Check if student exists in database
+      const foundStudent = dbStudents.find(s => s.nis === data.nis);
+      if (foundStudent) {
+        setSelectedStudentId(foundStudent.id);
+        setStudentName(foundStudent.name);
+        setStudentClass(foundStudent.studentClass);
+        setSelectedClassFilter(foundStudent.studentClass);
+        detectedDetails.push(`Siswa: ${foundStudent.name}`);
+      } else if (data.studentName) {
+        setStudentName(data.studentName);
+        detectedDetails.push(`Siswa: ${data.studentName}`);
+      }
+    } else if (data.studentName) {
+      setStudentName(data.studentName);
+      detectedDetails.push(`Siswa: ${data.studentName}`);
+    }
+
+    const summaryText = detectedDetails.length > 0
+      ? `Data berhasil terisi otomatis: ${detectedDetails.join(' | ')}`
+      : 'QR Code berhasil dipindai!';
+    setQrSuccessNotice(summaryText);
+    setTimeout(() => {
+      setQrSuccessNotice('');
+    }, 6000);
+  };
+
   const handleConfirmAndStart = () => {
     if (selectedExam) {
       // Attempt immediate fullscreen request directly from user gesture
@@ -138,6 +202,44 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
 
         {/* Exam Card Form */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
+          
+          {/* Quick QR Code Scan Action Card */}
+          <div className="bg-gradient-to-r from-indigo-950/60 via-purple-950/40 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-indigo-950/40">
+            <div className="flex items-center space-x-3.5 text-left w-full sm:w-auto">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
+                <QrCode className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="font-extrabold text-sm text-white">Mulai Cepat dengan QR Code</span>
+                  <span className="bg-indigo-500/30 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-400/30">
+                    Instan
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Pindai QR dari proyektor guru atau kartu ujian siswa
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQRScanner(true)}
+              className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-indigo-600/40 flex items-center justify-center space-x-2 transition cursor-pointer shrink-0"
+            >
+              <Scan className="w-4 h-4" />
+              <span>Pindai QR Code</span>
+            </button>
+          </div>
+
+          {/* QR Scan Success Notice */}
+          {qrSuccessNotice && (
+            <div className="p-3.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs flex items-center space-x-2.5 animate-in fade-in zoom-in-95">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <div className="flex-1 font-medium">{qrSuccessNotice}</div>
+            </div>
+          )}
+
           <form onSubmit={handleValidateForm} className="space-y-5">
             
             {/* Student Identitas & Selection from DB */}
@@ -408,6 +510,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
           </div>
         </div>
       )}
+
+      {/* QR Code Scanner Modal */}
+      <QRScannerModal
+        isOpen={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        exams={activeExams}
+        students={dbStudents}
+        onScanSuccess={handleQRScanSuccess}
+      />
 
     </div>
   );

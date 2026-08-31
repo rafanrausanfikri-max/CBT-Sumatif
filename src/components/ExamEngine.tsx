@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MathText } from './MathText';
 import { Exam, ExamSubmission, Question, ViolationRecord } from '../types';
 import { encryptStudentAnswers, generatePayloadChecksum } from '../lib/encryption';
@@ -15,7 +15,8 @@ import {
   Send,
   Flag,
   FileText,
-  KeyRound
+  KeyRound,
+  Shuffle
 } from 'lucide-react';
 
 interface ExamEngineProps {
@@ -26,6 +27,41 @@ interface ExamEngineProps {
   initialSubmission?: ExamSubmission;
   onFinishExam: (submission: ExamSubmission) => void;
   adminPin: string;
+}
+
+// Deterministic Pseudo Random Generator based on simple seed string (e.g. Student NIS + Exam ID)
+// ensures the randomized order stays consistent during the student's entire exam session across refreshes
+function createSeededRandom(seedStr: string) {
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  let state = Math.abs(hash) || 123456789;
+  return function () {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+function shuffleArrayWithRng<T>(array: T[], rng: () => number): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const temp = result[i];
+    result[i] = result[j];
+    result[j] = temp;
+  }
+  return result;
+}
+
+export interface DisplayOption {
+  originalIndex: number;
+  text: string;
+}
+
+export interface ProcessedQuestion extends Question {
+  displayOptions: DisplayOption[];
 }
 
 export const ExamEngine: React.FC<ExamEngineProps> = ({
@@ -64,7 +100,36 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
 
-  const questions: Question[] = exam.questions || [];
+  // Compute processed questions with randomized order & randomized options per student
+  const questions: ProcessedQuestion[] = useMemo(() => {
+    const rawQuestions = exam.questions || [];
+    const seed = `${exam.id}_${(nis || '').trim()}_${(studentName || '').trim()}`;
+    const rng = createSeededRandom(seed);
+
+    let processed: ProcessedQuestion[] = rawQuestions.map((q, qIndex) => {
+      const optRng = createSeededRandom(`${seed}_q_${q.id || qIndex}`);
+      const rawOptions = (q.options || []).map((text, originalIndex) => ({
+        originalIndex,
+        text,
+      }));
+
+      const displayOptions = exam.randomizeOptions
+        ? shuffleArrayWithRng(rawOptions, optRng)
+        : rawOptions;
+
+      return {
+        ...q,
+        displayOptions,
+      };
+    });
+
+    if (exam.randomizeQuestions) {
+      processed = shuffleArrayWithRng(processed, rng);
+    }
+
+    return processed;
+  }, [exam.id, exam.questions, exam.randomizeQuestions, exam.randomizeOptions, nis, studentName]);
+
   const currentQuestion = questions[currentQuestionIndex];
 
   const submissionIdRef = useRef<string>(
@@ -503,14 +568,14 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
 
               {/* Options List */}
               <div className="space-y-3 pt-2">
-                {currentQuestion.options.map((optionText, optIdx) => {
+                {currentQuestion.displayOptions.map((opt, displayIdx) => {
                   const optionLetters = ['A', 'B', 'C', 'D', 'E'];
-                  const isSelected = answers[currentQuestion.id] === optIdx;
+                  const isSelected = answers[currentQuestion.id] === opt.originalIndex;
 
                   return (
                     <button
-                      key={optIdx}
-                      onClick={() => handleSelectOption(currentQuestion.id, optIdx)}
+                      key={opt.originalIndex}
+                      onClick={() => handleSelectOption(currentQuestion.id, opt.originalIndex)}
                       className={`w-full text-left p-4 rounded-xl border transition-all flex items-center space-x-4 cursor-pointer ${
                         isSelected
                           ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-md shadow-indigo-600/10'
@@ -520,10 +585,10 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${
                         isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'
                       }`}>
-                        {optionLetters[optIdx]}
+                        {optionLetters[displayIdx]}
                       </div>
                       <div className="text-sm sm:text-base leading-snug flex-1">
-                        <MathText text={optionText} />
+                        <MathText text={opt.text} />
                       </div>
                     </button>
                   );
