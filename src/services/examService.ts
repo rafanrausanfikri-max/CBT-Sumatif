@@ -31,6 +31,8 @@ export const DEFAULT_SAMPLE_EXAM: Exam = {
   isActive: true,
   antiCheatEnabled: true,
   maxViolations: 3,
+  randomizeQuestions: true,
+  randomizeOptions: true,
   createdAt: new Date().toISOString(),
   questionCount: 5,
   questions: [
@@ -229,8 +231,9 @@ export function subscribeExams(callback: (exams: Exam[]) => void) {
     snapshot.forEach((docSnap) => {
       exams.push({ id: docSnap.id, ...docSnap.data() } as Exam);
     });
-    if (exams.length === 0) {
-      // Auto seed
+    const hasBeenInitialized = localStorage.getItem('cbt_exams_initialized');
+    if (exams.length === 0 && !hasBeenInitialized) {
+      localStorage.setItem('cbt_exams_initialized', 'true');
       seedInitialExamsIfEmpty().then((seeded) => callback(seeded));
     } else {
       callback(exams);
@@ -245,6 +248,7 @@ export function subscribeExams(callback: (exams: Exam[]) => void) {
  * Create or update exam in Firestore
  */
 export async function saveExam(exam: Partial<Exam>): Promise<string> {
+  localStorage.setItem('cbt_exams_initialized', 'true');
   const examId = exam.id || `exam_${Date.now()}`;
 
   const cleanQuestions = (exam.questions || []).map((q, idx) => {
@@ -270,6 +274,13 @@ export async function saveExam(exam: Partial<Exam>): Promise<string> {
     isActive: exam.isActive !== undefined ? Boolean(exam.isActive) : true,
     antiCheatEnabled: exam.antiCheatEnabled !== undefined ? Boolean(exam.antiCheatEnabled) : true,
     maxViolations: Number(exam.maxViolations) || 3,
+    randomizeQuestions: exam.randomizeQuestions !== undefined ? Boolean(exam.randomizeQuestions) : true,
+    randomizeOptions: exam.randomizeOptions !== undefined ? Boolean(exam.randomizeOptions) : true,
+    accessRestrictionType: exam.accessRestrictionType || 'all',
+    allowedClasses: Array.isArray(exam.allowedClasses) ? exam.allowedClasses : [],
+    allowedStudentNis: Array.isArray(exam.allowedStudentNis) ? exam.allowedStudentNis : [],
+    maxConcurrentParticipants: Number(exam.maxConcurrentParticipants) || 0,
+    examSessionSchedule: exam.examSessionSchedule || '',
     createdAt: exam.createdAt || new Date().toISOString(),
     questionCount: cleanQuestions.length,
     questions: cleanQuestions
@@ -286,6 +297,7 @@ export async function saveExam(exam: Partial<Exam>): Promise<string> {
  * Delete Exam
  */
 export async function deleteExam(examId: string): Promise<void> {
+  localStorage.setItem('cbt_exams_initialized', 'true');
   await deleteDoc(doc(db, EXAMS_COLLECTION, examId));
 }
 

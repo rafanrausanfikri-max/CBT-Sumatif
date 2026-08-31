@@ -5,6 +5,7 @@ export interface Student {
   name: string;
   gender: 'L' | 'P';
   studentClass: string;
+  isBlocked?: boolean;
 }
 
 export interface SchoolClass {
@@ -36,6 +37,15 @@ export interface Exam {
   createdAt: string;
   questionCount: number;
   questions: Question[];
+  // Participant Access Control (Pembatasan Peserta Ujian)
+  accessRestrictionType?: 'all' | 'class_only' | 'selected_students';
+  allowedClasses?: string[];
+  allowedStudentNis?: string[];
+  maxConcurrentParticipants?: number;
+  examSessionSchedule?: string;
+  // Randomization Settings (Pengacakan Soal & Pilihan Jawaban)
+  randomizeQuestions?: boolean;
+  randomizeOptions?: boolean;
 }
 
 export interface ViolationRecord {

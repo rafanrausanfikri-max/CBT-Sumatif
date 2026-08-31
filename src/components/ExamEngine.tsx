@@ -101,6 +101,9 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
 
   // Compute processed questions with randomized order & randomized options per student
+  const isRandomQuestions = exam.randomizeQuestions !== undefined ? exam.randomizeQuestions : true;
+  const isRandomOptions = exam.randomizeOptions !== undefined ? exam.randomizeOptions : true;
+
   const questions: ProcessedQuestion[] = useMemo(() => {
     const rawQuestions = exam.questions || [];
     const seed = `${exam.id}_${(nis || '').trim()}_${(studentName || '').trim()}`;
@@ -113,7 +116,7 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
         text,
       }));
 
-      const displayOptions = exam.randomizeOptions
+      const displayOptions = isRandomOptions
         ? shuffleArrayWithRng(rawOptions, optRng)
         : rawOptions;
 
@@ -123,12 +126,12 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
       };
     });
 
-    if (exam.randomizeQuestions) {
+    if (isRandomQuestions) {
       processed = shuffleArrayWithRng(processed, rng);
     }
 
     return processed;
-  }, [exam.id, exam.questions, exam.randomizeQuestions, exam.randomizeOptions, nis, studentName]);
+  }, [exam.id, exam.questions, isRandomQuestions, isRandomOptions, nis, studentName]);
 
   const currentQuestion = questions[currentQuestionIndex];
 
@@ -461,8 +464,16 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
         </div>
 
         {/* Live Timer & Violation Status */}
-        <div className="flex items-center space-x-3 sm:space-x-5">
+        <div className="flex items-center space-x-3 sm:space-x-4">
           
+          {/* Randomization Badge */}
+          {(isRandomQuestions || isRandomOptions) && (
+            <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 text-xs font-semibold" title="Urutan butir soal & opsi pilihan jawaban diacak secara unik per siswa">
+              <Shuffle className="w-3.5 h-3.5 text-purple-400" />
+              <span>{isRandomQuestions && isRandomOptions ? 'Soal & Jawaban Teracak' : isRandomQuestions ? 'Soal Teracak' : 'Jawaban Teracak'}</span>
+            </div>
+          )}
+
           {/* Violation Counter Badge */}
           {exam.antiCheatEnabled && (
             <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${

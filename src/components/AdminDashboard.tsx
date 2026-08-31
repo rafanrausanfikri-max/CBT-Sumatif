@@ -51,10 +51,11 @@ import {
   Eye,
   Check,
   GraduationCap,
-  QrCode,
-  X
+  Users as UsersIcon,
+  X,
+  Shuffle
 } from 'lucide-react';
-import { ExamQRCodeModal } from './ExamQRCodeModal';
+import { ParticipantAccessModal } from './ParticipantAccessModal';
 
 interface AdminDashboardProps {
   exams: Exam[];
@@ -77,8 +78,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showExamModal, setShowExamModal] = useState(false);
   const [editingExam, setEditingExam] = useState<Partial<Exam> | null>(null);
-  const [selectedQrExam, setSelectedQrExam] = useState<Exam | null>(null);
-  const [showQrModal, setShowQrModal] = useState(false);
+  const [selectedAccessExam, setSelectedAccessExam] = useState<Exam | null>(null);
+  const [showAccessModal, setShowAccessModal] = useState(false);
 
   // Student Database States
   const [studentsList, setStudentsList] = useState<Student[]>([]);
@@ -101,6 +102,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddingClass, setIsAddingClass] = useState(false);
   const [classSuccessMsg, setClassSuccessMsg] = useState('');
   const [classErrorMsg, setClassErrorMsg] = useState('');
+
+  // Delete Exam Confirmation States
+  const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
+  const [isDeletingExam, setIsDeletingExam] = useState(false);
+  const [deleteExamError, setDeleteExamError] = useState('');
+
+  // Delete Student Confirmation States
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
+
+  // Delete Class Confirmation States
+  const [classToDelete, setClassToDelete] = useState<string | null>(null);
+  const [isDeletingClass, setIsDeletingClass] = useState(false);
+
+  // Seed 180 Students Confirmation States
+  const [showSeedModal, setShowSeedModal] = useState(false);
 
   // Subscribe to students and classes real-time
   useEffect(() => {
@@ -299,7 +316,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSaveError(null);
     setIsSaving(false);
     if (examToEdit) {
-      setEditingExam({ ...examToEdit });
+      setEditingExam({
+        ...examToEdit,
+        randomizeQuestions: examToEdit.randomizeQuestions !== undefined ? examToEdit.randomizeQuestions : true,
+        randomizeOptions: examToEdit.randomizeOptions !== undefined ? examToEdit.randomizeOptions : true,
+      });
       setQuestionsList(examToEdit.questions || []);
     } else {
       setEditingExam({
@@ -311,6 +332,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         isActive: true,
         antiCheatEnabled: true,
         maxViolations: 3,
+        randomizeQuestions: true,
+        randomizeOptions: true,
         questions: []
       });
       setQuestionsList([]);
@@ -376,9 +399,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteExam = async (examId: string) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus ujian ini? Data soal akan terhapus.')) {
-      await deleteExam(examId);
+  const handlePromptDeleteExam = (exam: Exam) => {
+    setExamToDelete(exam);
+    setDeleteExamError('');
+  };
+
+  const handleConfirmDeleteExam = async () => {
+    if (!examToDelete) return;
+    setIsDeletingExam(true);
+    setDeleteExamError('');
+    try {
+      await deleteExam(examToDelete.id);
+      if (selectedExamId === examToDelete.id) {
+        const remaining = exams.filter(e => e.id !== examToDelete.id);
+        if (remaining.length > 0) {
+          onSelectExamId(remaining[0].id);
+        } else {
+          onSelectExamId('');
+        }
+      }
+      setExamToDelete(null);
+    } catch (err: any) {
+      console.error('Error deleting exam:', err);
+      setDeleteExamError(err?.message || 'Gagal menghapus asesmen dari database.');
+    } finally {
+      setIsDeletingExam(false);
     }
   };
 
@@ -455,18 +500,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSeedDatabase = async () => {
-    if (confirm('Apakah Anda yakin ingin memuat/memulihkan data 180 siswa asli SMA Negeri 2 Ciamis? (Database akan disinkronkan)')) {
-      setIsSeedingStudents(true);
-      try {
-        await seedInitialStudents();
-        setStudentSuccessMsg('Database 180 siswa SMA Negeri 2 Ciamis berhasil dipulihkan!');
-        setTimeout(() => setStudentSuccessMsg(''), 4000);
-      } catch (err) {
-        alert('Gagal memuat data siswa.');
-      } finally {
-        setIsSeedingStudents(false);
-      }
+  const handleConfirmSeedDatabase = async () => {
+    setIsSeedingStudents(true);
+    try {
+      await seedInitialStudents();
+      setStudentSuccessMsg('Database 180 siswa SMA Negeri 2 Ciamis berhasil dipulihkan!');
+      setShowSeedModal(false);
+      setTimeout(() => setStudentSuccessMsg(''), 4000);
+    } catch (err: any) {
+      alert('Gagal memuat data siswa: ' + (err?.message || String(err)));
+    } finally {
+      setIsSeedingStudents(false);
     }
   };
 
@@ -497,20 +541,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteClass = async (classNameToDelete: string) => {
-    const studentsInClass = studentsList.filter(s => s.studentClass === classNameToDelete).length;
-    let confirmMsg = `Apakah Anda yakin ingin menghapus kelas "${classNameToDelete}" dari master rombel?`;
-    if (studentsInClass > 0) {
-      confirmMsg = `Kelas "${classNameToDelete}" memiliki ${studentsInClass} siswa terdaftar. Jika dihapus dari daftar rombel utama, data siswa tetap aman. Hapus kelas?`;
+  const handleConfirmDeleteClass = async () => {
+    if (!classToDelete) return;
+    setIsDeletingClass(true);
+    try {
+      await deleteSchoolClass(classToDelete);
+      setClassSuccessMsg(`Kelas "${classToDelete}" berhasil dihapus.`);
+      setClassToDelete(null);
+      setTimeout(() => setClassSuccessMsg(''), 3000);
+    } catch (err: any) {
+      alert('Gagal menghapus kelas: ' + (err?.message || String(err)));
+    } finally {
+      setIsDeletingClass(false);
     }
-    if (confirm(confirmMsg)) {
-      try {
-        await deleteSchoolClass(classNameToDelete);
-        setClassSuccessMsg(`Kelas "${classNameToDelete}" berhasil dihapus.`);
-        setTimeout(() => setClassSuccessMsg(''), 3000);
-      } catch (err: any) {
-        alert('Gagal menghapus kelas: ' + (err?.message || String(err)));
-      }
+  };
+
+  const handleConfirmDeleteStudent = async () => {
+    if (!studentToDelete) return;
+    setIsDeletingStudent(true);
+    try {
+      await deleteStudent(studentToDelete.id);
+      setStudentToDelete(null);
+    } catch (err: any) {
+      alert('Gagal menghapus data siswa: ' + (err?.message || String(err)));
+    } finally {
+      setIsDeletingStudent(false);
     }
   };
 
@@ -557,15 +612,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               onClick={() => {
                 const ex = exams.find(e => e.id === selectedExamId);
                 if (ex) {
-                  setSelectedQrExam(ex);
-                  setShowQrModal(true);
+                  setSelectedAccessExam(ex);
+                  setShowAccessModal(true);
                 }
               }}
-              className="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 font-bold rounded-xl text-xs flex items-center space-x-1.5 transition cursor-pointer"
-              title="Tampilkan QR Code Ujian / Proyektor"
+              className="px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 font-bold rounded-xl text-xs flex items-center space-x-1.5 transition cursor-pointer"
+              title="Atur Hak Akses & Pembatasan Peserta Ujian"
             >
-              <QrCode className="w-4 h-4 text-indigo-400" />
-              <span>QR Code Asesmen</span>
+              <Users className="w-4 h-4 text-purple-400" />
+              <span>Akses Peserta</span>
             </button>
           )}
 
@@ -857,8 +912,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDeleteExam(ex.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition"
+                      onClick={() => handlePromptDeleteExam(ex)}
+                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                      title="Hapus Asesmen"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -884,6 +940,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Randomization Badges */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg flex items-center space-x-1 border ${
+                    ex.randomizeQuestions !== false
+                      ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-500'
+                  }`}>
+                    <Shuffle className="w-3 h-3" />
+                    <span>Acak Soal: {ex.randomizeQuestions !== false ? 'Aktif' : 'Non-Aktif'}</span>
+                  </span>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg flex items-center space-x-1 border ${
+                    ex.randomizeOptions !== false
+                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-500'
+                  }`}>
+                    <Shuffle className="w-3 h-3" />
+                    <span>Acak Opsi: {ex.randomizeOptions !== false ? 'Aktif' : 'Non-Aktif'}</span>
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800 gap-2">
                   <div className="flex items-center space-x-2">
                     <span className={`font-semibold ${ex.isActive ? 'text-emerald-400' : 'text-slate-500'}`}>
@@ -891,14 +967,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                     <button
                       onClick={() => {
-                        setSelectedQrExam(ex);
-                        setShowQrModal(true);
+                        setSelectedAccessExam(ex);
+                        setShowAccessModal(true);
                       }}
-                      className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold flex items-center space-x-1 transition cursor-pointer"
-                      title="Tampilkan / Cetak QR Code Ujian Ini"
+                      className="px-2.5 py-1 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-bold flex items-center space-x-1 transition cursor-pointer"
+                      title="Atur Pembatasan Akses Peserta (Rombel / Whitelist)"
                     >
-                      <QrCode className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>QR Code</span>
+                      <Users className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Akses Peserta</span>
                     </button>
                   </div>
                   
@@ -1205,7 +1281,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteClass(cls);
+                        setClassToDelete(cls);
                       }}
                       className="text-slate-400 hover:text-rose-400 p-0.5 rounded transition cursor-pointer ml-1"
                       title={`Hapus kelas ${cls}`}
@@ -1251,7 +1327,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* Action Buttons */}
             <div className="flex items-center space-x-2 w-full md:w-auto justify-end">
               <button
-                onClick={handleSeedDatabase}
+                type="button"
+                onClick={() => setShowSeedModal(true)}
                 disabled={isSeedingStudents}
                 className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold rounded-xl text-xs flex items-center space-x-1.5 transition cursor-pointer disabled:opacity-50"
                 title="Pulihkan data 180 siswa SMA Negeri 2 Ciamis dari lampiran"
@@ -1356,11 +1433,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </td>
                             <td className="p-3.5 pr-6 text-right">
                               <button
-                                onClick={async () => {
-                                  if (confirm(`Apakah Anda yakin ingin menghapus data siswa ${student.name} (${student.nis})?`)) {
-                                    await deleteStudent(student.id);
-                                  }
-                                }}
+                                onClick={() => setStudentToDelete(student)}
                                 className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
                                 title="Hapus Siswa"
                               >
@@ -1466,6 +1539,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => setEditingExam({ ...editingExam, maxViolations: parseInt(e.target.value) || 3 })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:ring-2 focus:ring-indigo-500"
                   />
+                </div>
+              </div>
+
+              {/* FITUR PENGACAKAN SOAL & KEAMANAN UJIAN */}
+              <div className="bg-slate-800/90 border border-indigo-500/30 p-5 rounded-2xl space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-700/80 pb-2.5">
+                  <Shuffle className="w-4 h-4 text-indigo-400" />
+                  <h4 className="font-extrabold text-sm text-white">
+                    Pengaturan Pengacakan Soal, Jawaban & Keamanan
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {/* Acak Urutan Soal */}
+                  <label className={`p-3.5 rounded-xl border flex items-start space-x-3 cursor-pointer transition select-none ${
+                    editingExam.randomizeQuestions !== false
+                      ? 'bg-indigo-600/15 border-indigo-500/50 text-white'
+                      : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editingExam.randomizeQuestions !== false}
+                      onChange={(e) => setEditingExam({ ...editingExam, randomizeQuestions: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-indigo-600 bg-slate-800 border-slate-700 rounded focus:ring-indigo-500 shrink-0"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center space-x-1.5 text-white">
+                        <Shuffle className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Acak Urutan Soal</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Urutan nomor butir soal akan diacak otomatis berbeda untuk setiap peserta ujian.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Acak Pilihan Jawaban */}
+                  <label className={`p-3.5 rounded-xl border flex items-start space-x-3 cursor-pointer transition select-none ${
+                    editingExam.randomizeOptions !== false
+                      ? 'bg-purple-600/15 border-purple-500/50 text-white'
+                      : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editingExam.randomizeOptions !== false}
+                      onChange={(e) => setEditingExam({ ...editingExam, randomizeOptions: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-purple-600 bg-slate-800 border-slate-700 rounded focus:ring-purple-500 shrink-0"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center space-x-1.5 text-white">
+                        <Shuffle className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Acak Pilihan Jawaban (A-E)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Posisi opsi jawaban (A, B, C, D, E) diacak secara unik pada tiap soal, penilaian tetap 100% akurat.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Anti-Cheat Fullscreen Enforcement */}
+                  <label className={`p-3.5 rounded-xl border flex items-start space-x-3 cursor-pointer transition select-none ${
+                    editingExam.antiCheatEnabled !== false
+                      ? 'bg-emerald-600/15 border-emerald-500/50 text-white'
+                      : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editingExam.antiCheatEnabled !== false}
+                      onChange={(e) => setEditingExam({ ...editingExam, antiCheatEnabled: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 bg-slate-800 border-slate-700 rounded focus:ring-emerald-500 shrink-0"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center space-x-1.5 text-white">
+                        <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Sistem Pengawasan Anti-Curang</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Wajib layar penuh, cegah split screen, alt-tab, dan blokir salin-tempel/klik kanan.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Status Asesmen Aktif */}
+                  <label className={`p-3.5 rounded-xl border flex items-start space-x-3 cursor-pointer transition select-none ${
+                    editingExam.isActive !== false
+                      ? 'bg-sky-600/15 border-sky-500/50 text-white'
+                      : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editingExam.isActive !== false}
+                      onChange={(e) => setEditingExam({ ...editingExam, isActive: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-sky-600 bg-slate-800 border-slate-700 rounded focus:ring-sky-500 shrink-0"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-bold flex items-center space-x-1.5 text-white">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Asesmen Terbuka / Aktif</span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Bila aktif, asesmen akan muncul pada daftar ujian yang dapat dipilih siswa di portal.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
 
@@ -1994,6 +2171,189 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 {isDeleting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                 <span>{isDeleting ? 'Menghapus Semua Data...' : 'Ya, Hapus Semua Submisi'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRM DELETE EXAM */}
+      {examToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Hapus Paket Asesmen?</h3>
+                <p className="text-xs text-slate-400">Konfirmasi Penghapusan Ujian</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-2.5 bg-slate-800/50 p-4 rounded-xl border border-slate-800">
+              <p>
+                Apakah Anda yakin ingin menghapus asesmen <strong className="text-white">{examToDelete.title}</strong>?
+              </p>
+              <div className="space-y-1 text-slate-400 text-[11px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                <p>• Mata Pelajaran: <span className="text-indigo-300 font-semibold">{examToDelete.subject}</span></p>
+                <p>• Tingkat / Kelas: <span className="text-slate-200">{examToDelete.gradeClass}</span></p>
+                <p>• Jumlah Soal: <span className="text-slate-200">{examToDelete.questions?.length || examToDelete.questionCount || 0} Soal</span></p>
+              </div>
+              <p className="text-rose-400 font-bold text-[11px]">
+                ⚠️ Peringatan: Seluruh paket soal asesmen ini akan dihapus secara permanen dari basis data.
+              </p>
+            </div>
+
+            {deleteExamError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs">
+                {deleteExamError}
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setExamToDelete(null);
+                  setDeleteExamError('');
+                }}
+                disabled={isDeletingExam}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteExam}
+                disabled={isDeletingExam}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingExam ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeletingExam ? 'Menghapus Asesmen...' : 'Ya, Hapus Asesmen'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRM DELETE STUDENT */}
+      {studentToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Hapus Data Siswa?</h3>
+                <p className="text-xs text-slate-400">Konfirmasi Penghapusan Siswa</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              Apakah Anda yakin ingin menghapus data siswa <strong className="text-white">{studentToDelete.name}</strong> (NIS: <span className="font-mono">{studentToDelete.nis}</span>, Kelas: {studentToDelete.studentClass}) dari master siswa?
+            </p>
+
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                disabled={isDeletingStudent}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteStudent}
+                disabled={isDeletingStudent}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingStudent ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeletingStudent ? 'Menghapus...' : 'Ya, Hapus Siswa'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRM DELETE CLASS */}
+      {classToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center space-x-3 text-rose-400">
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Hapus Rombel / Kelas?</h3>
+                <p className="text-xs text-slate-400">Konfirmasi Penghapusan Kelas</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              Apakah Anda yakin ingin menghapus rombel / kelas <strong className="text-white">"{classToDelete}"</strong> dari master rombel? Data siswa yang terdaftar pada kelas ini tetap aman.
+            </p>
+
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setClassToDelete(null)}
+                disabled={isDeletingClass}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClass}
+                disabled={isDeletingClass}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingClass ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                <span>{isDeletingClass ? 'Menghapus...' : 'Ya, Hapus Kelas'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRM SEED 180 STUDENTS */}
+      {showSeedModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center space-x-3 text-amber-400">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">Pulihkan Data 180 Siswa?</h3>
+                <p className="text-xs text-slate-400">Sinkronisasi Data Siswa SMA Negeri 2 Ciamis</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-800/50 p-3.5 rounded-xl border border-slate-800">
+              Sistem akan memuat dan menyinkronkan seluruh 180 data siswa asli SMA Negeri 2 Ciamis (Kelas XII F-1 s.d. XII F-5) ke dalam basis data Firestore.
+            </p>
+
+            <div className="flex justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSeedModal(false)}
+                disabled={isSeedingStudents}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSeedDatabase}
+                disabled={isSeedingStudents}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center space-x-2 transition shadow-lg shadow-indigo-600/20 cursor-pointer disabled:opacity-50"
+              >
+                {isSeedingStudents ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                <span>{isSeedingStudents ? 'Memulihkan...' : 'Ya, Pulihkan Sekarang'}</span>
               </button>
             </div>
           </div>
@@ -2570,11 +2930,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* QR Code Presentation Modal */}
-      <ExamQRCodeModal
-        isOpen={showQrModal}
-        onClose={() => setShowQrModal(false)}
-        exam={selectedQrExam}
+      {/* Participant Access Control Modal */}
+      <ParticipantAccessModal
+        isOpen={showAccessModal}
+        onClose={() => setShowAccessModal(false)}
+        exam={selectedAccessExam}
+        students={studentsList}
+        classes={classesList}
+        onSave={async (examId, updates) => {
+          await saveExam({ id: examId, ...updates });
+        }}
       />
 
     </div>

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Exam, Student } from '../types';
 import { subscribeStudents, subscribeClasses } from '../services/examService';
-import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School, QrCode, Sparkles, Scan } from 'lucide-react';
-import { QRScannerModal, ScannedQRData } from './QRScannerModal';
+import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School, Shuffle } from 'lucide-react';
 
 interface StudentPortalProps {
   exams: Exam[];
@@ -17,8 +16,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
   const [passCodeInput, setPassCodeInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [showAgreementModal, setShowAgreementModal] = useState(false);
-  const [showQRScanner, setShowQRScanner] = useState(false);
-  const [qrSuccessNotice, setQrSuccessNotice] = useState<string>('');
 
   // Student DB Lookup & Classes
   const [dbStudents, setDbStudents] = useState<Student[]>([]);
@@ -96,69 +93,30 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
       return;
     }
 
+    // Check if student is blocked
+    const studentRecord = dbStudents.find(s => s.nis === nis.trim() || s.id === selectedStudentId);
+    if (studentRecord?.isBlocked) {
+      setErrorMessage('Akses Ditolak: Akun siswa dengan NIS ini sedang ditangguhkan / diblokir oleh administrator.');
+      return;
+    }
+
+    // Check Exam Participant Restrictions
+    if (selectedExam.accessRestrictionType === 'class_only') {
+      const allowed = selectedExam.allowedClasses || [];
+      if (allowed.length > 0 && !allowed.includes(studentClass)) {
+        setErrorMessage(`Akses Terbatas: Ujian ini hanya dibuka untuk rombel/kelas [${allowed.join(', ')}]. Kelas Anda (${studentClass}) tidak terdaftar.`);
+        return;
+      }
+    } else if (selectedExam.accessRestrictionType === 'selected_students') {
+      const allowedNis = selectedExam.allowedStudentNis || [];
+      if (allowedNis.length > 0 && !allowedNis.includes(nis.trim())) {
+        setErrorMessage(`Akses Khusus: NIS Anda (${nis}) tidak terdaftar dalam whitelist peserta asesmen ini (Ujian Khusus/Susulan).`);
+        return;
+      }
+    }
+
     // Open Anti-cheat agreement modal
     setShowAgreementModal(true);
-  };
-
-  const handleQRScanSuccess = (data: ScannedQRData) => {
-    setErrorMessage('');
-    let detectedDetails: string[] = [];
-
-    // 1. Auto-select or match Exam
-    if (data.examId) {
-      const foundExam = activeExams.find(e => e.id === data.examId);
-      if (foundExam) {
-        setSelectedExamId(foundExam.id);
-        detectedDetails.push(`Ujian: ${foundExam.subject}`);
-      }
-    } else if (data.passCode) {
-      const foundExam = activeExams.find(
-        e => e.passCode && e.passCode.toUpperCase() === data.passCode?.toUpperCase()
-      );
-      if (foundExam) {
-        setSelectedExamId(foundExam.id);
-        detectedDetails.push(`Ujian: ${foundExam.subject}`);
-      }
-    }
-
-    // 2. Auto-fill Token / Passcode
-    if (data.passCode) {
-      setPassCodeInput(data.passCode.toUpperCase());
-      detectedDetails.push(`Token: ${data.passCode.toUpperCase()}`);
-    }
-
-    // 3. Auto-select / fill Student Info if available
-    if (data.studentClass) {
-      setSelectedClassFilter(data.studentClass);
-      setStudentClass(data.studentClass);
-    }
-
-    if (data.nis) {
-      setNis(data.nis);
-      // Check if student exists in database
-      const foundStudent = dbStudents.find(s => s.nis === data.nis);
-      if (foundStudent) {
-        setSelectedStudentId(foundStudent.id);
-        setStudentName(foundStudent.name);
-        setStudentClass(foundStudent.studentClass);
-        setSelectedClassFilter(foundStudent.studentClass);
-        detectedDetails.push(`Siswa: ${foundStudent.name}`);
-      } else if (data.studentName) {
-        setStudentName(data.studentName);
-        detectedDetails.push(`Siswa: ${data.studentName}`);
-      }
-    } else if (data.studentName) {
-      setStudentName(data.studentName);
-      detectedDetails.push(`Siswa: ${data.studentName}`);
-    }
-
-    const summaryText = detectedDetails.length > 0
-      ? `Data berhasil terisi otomatis: ${detectedDetails.join(' | ')}`
-      : 'QR Code berhasil dipindai!';
-    setQrSuccessNotice(summaryText);
-    setTimeout(() => {
-      setQrSuccessNotice('');
-    }, 6000);
   };
 
   const handleConfirmAndStart = () => {
@@ -203,43 +161,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
         {/* Exam Card Form */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
           
-          {/* Quick QR Code Scan Action Card */}
-          <div className="bg-gradient-to-r from-indigo-950/60 via-purple-950/40 to-slate-900 border border-indigo-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg shadow-indigo-950/40">
-            <div className="flex items-center space-x-3.5 text-left w-full sm:w-auto">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
-                <QrCode className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-extrabold text-sm text-white">Mulai Cepat dengan QR Code</span>
-                  <span className="bg-indigo-500/30 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-400/30">
-                    Instan
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Pindai QR dari proyektor guru atau kartu ujian siswa
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowQRScanner(true)}
-              className="w-full sm:w-auto px-5 py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-indigo-600/40 flex items-center justify-center space-x-2 transition cursor-pointer shrink-0"
-            >
-              <Scan className="w-4 h-4" />
-              <span>Pindai QR Code</span>
-            </button>
-          </div>
-
-          {/* QR Scan Success Notice */}
-          {qrSuccessNotice && (
-            <div className="p-3.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs flex items-center space-x-2.5 animate-in fade-in zoom-in-95">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-              <div className="flex-1 font-medium">{qrSuccessNotice}</div>
-            </div>
-          )}
-
           <form onSubmit={handleValidateForm} className="space-y-5">
             
             {/* Student Identitas & Selection from DB */}
@@ -348,15 +269,42 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
                 </div>
 
                 {selectedExam && (
-                  <div className="grid grid-cols-2 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-300">
-                    <div className="flex items-center space-x-2">
-                      <Clock className="w-4 h-4 text-indigo-400" />
-                      <span>Durasi: <strong className="text-white">{selectedExam.durationMinutes} Menit</strong></span>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3 bg-slate-800/40 p-3 rounded-xl border border-slate-800 text-xs text-slate-300">
+                      <div className="flex items-center space-x-2">
+                        <Clock className="w-4 h-4 text-indigo-400" />
+                        <span>Durasi: <strong className="text-white">{selectedExam.durationMinutes} Menit</strong></span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <FileText className="w-4 h-4 text-sky-400" />
+                        <span>Jumlah: <strong className="text-white">{selectedExam.questions?.length || selectedExam.questionCount} Soal</strong></span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <FileText className="w-4 h-4 text-sky-400" />
-                      <span>Jumlah: <strong className="text-white">{selectedExam.questions?.length || selectedExam.questionCount} Soal</strong></span>
-                    </div>
+                    
+                    {/* Randomization Badges */}
+                    {(selectedExam.randomizeQuestions !== false || selectedExam.randomizeOptions !== false) && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {selectedExam.randomizeQuestions !== false && (
+                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 flex items-center space-x-1.5">
+                            <Shuffle className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Urutan Soal Diacak</span>
+                          </span>
+                        )}
+                        {selectedExam.randomizeOptions !== false && (
+                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center space-x-1.5">
+                            <Shuffle className="w-3.5 h-3.5 text-purple-400" />
+                            <span>Pilihan Jawaban (A-E) Diacak</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {selectedExam.examSessionSchedule && (
+                      <div className="bg-purple-950/40 border border-purple-800/40 px-3 py-1.5 rounded-xl text-purple-300 text-xs flex items-center justify-between">
+                        <span className="font-semibold">Jadwal Sesi:</span>
+                        <span className="font-bold text-white font-mono">{selectedExam.examSessionSchedule}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -510,15 +458,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
           </div>
         </div>
       )}
-
-      {/* QR Code Scanner Modal */}
-      <QRScannerModal
-        isOpen={showQRScanner}
-        onClose={() => setShowQRScanner(false)}
-        exams={activeExams}
-        students={dbStudents}
-        onScanSuccess={handleQRScanSuccess}
-      />
 
     </div>
   );
