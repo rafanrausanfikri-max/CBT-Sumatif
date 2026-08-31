@@ -226,10 +226,24 @@ export async function seedInitialExamsIfEmpty(): Promise<Exam[]> {
  */
 export function subscribeExams(callback: (exams: Exam[]) => void) {
   const examsRef = collection(db, EXAMS_COLLECTION);
-  return onSnapshot(examsRef, (snapshot) => {
+  return onSnapshot(examsRef, async (snapshot) => {
     const exams: Exam[] = [];
     snapshot.forEach((docSnap) => {
-      exams.push({ id: docSnap.id, ...docSnap.data() } as Exam);
+      const data = docSnap.data() as Exam;
+      
+      // Auto-repair if a sample exam had its questions wiped out to 0
+      if (docSnap.id === DEFAULT_SAMPLE_EXAM.id && (!data.questions || data.questions.length === 0)) {
+        data.questions = DEFAULT_SAMPLE_EXAM.questions;
+        data.questionCount = DEFAULT_SAMPLE_EXAM.questions.length;
+        setDoc(docSnap.ref, { questions: DEFAULT_SAMPLE_EXAM.questions, questionCount: DEFAULT_SAMPLE_EXAM.questions.length }, { merge: true }).catch(console.error);
+      }
+      if (docSnap.id === MATH_SAMPLE_EXAM.id && (!data.questions || data.questions.length === 0)) {
+        data.questions = MATH_SAMPLE_EXAM.questions;
+        data.questionCount = MATH_SAMPLE_EXAM.questions.length;
+        setDoc(docSnap.ref, { questions: MATH_SAMPLE_EXAM.questions, questionCount: MATH_SAMPLE_EXAM.questions.length }, { merge: true }).catch(console.error);
+      }
+
+      exams.push({ id: docSnap.id, ...data });
     });
     const hasBeenInitialized = localStorage.getItem('cbt_exams_initialized');
     if (exams.length === 0 && !hasBeenInitialized) {
@@ -245,52 +259,91 @@ export function subscribeExams(callback: (exams: Exam[]) => void) {
 }
 
 /**
- * Create or update exam in Firestore
+ * Create or update exam in Firestore safely without losing existing fields/questions
  */
 export async function saveExam(exam: Partial<Exam>): Promise<string> {
   localStorage.setItem('cbt_exams_initialized', 'true');
   const examId = exam.id || `exam_${Date.now()}`;
+  const examRef = doc(db, EXAMS_COLLECTION, examId);
 
-  const cleanQuestions = (exam.questions || []).map((q, idx) => {
-    const qObj: Record<string, any> = {
-      id: q.id || `q_${Date.now()}_${idx}`,
-      questionText: q.questionText || '',
-      options: Array.isArray(q.options) ? q.options.map(o => o || '') : [],
-      correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
-      points: typeof q.points === 'number' ? q.points : 10,
-    };
-    if (q.explanation) qObj.explanation = q.explanation;
-    if (q.imageUrl) qObj.imageUrl = q.imageUrl;
-    return qObj;
-  });
-
-  const examData = {
+  const examData: Record<string, any> = {
     id: examId,
-    title: exam.title || 'Asesmen Baru',
-    subject: exam.subject || 'Mata Pelajaran',
-    gradeClass: exam.gradeClass || 'Semua Kelas',
-    durationMinutes: Number(exam.durationMinutes) || 30,
-    passCode: exam.passCode || '123456',
-    isActive: exam.isActive !== undefined ? Boolean(exam.isActive) : true,
-    antiCheatEnabled: exam.antiCheatEnabled !== undefined ? Boolean(exam.antiCheatEnabled) : true,
-    maxViolations: Number(exam.maxViolations) || 3,
-    randomizeQuestions: exam.randomizeQuestions !== undefined ? Boolean(exam.randomizeQuestions) : true,
-    randomizeOptions: exam.randomizeOptions !== undefined ? Boolean(exam.randomizeOptions) : true,
-    accessRestrictionType: exam.accessRestrictionType || 'all',
-    allowedClasses: Array.isArray(exam.allowedClasses) ? exam.allowedClasses : [],
-    allowedStudentNis: Array.isArray(exam.allowedStudentNis) ? exam.allowedStudentNis : [],
-    maxConcurrentParticipants: Number(exam.maxConcurrentParticipants) || 0,
-    examSessionSchedule: exam.examSessionSchedule || '',
-    createdAt: exam.createdAt || new Date().toISOString(),
-    questionCount: cleanQuestions.length,
-    questions: cleanQuestions
+    updatedAt: new Date().toISOString()
   };
+
+  if (exam.title !== undefined) examData.title = exam.title;
+  if (exam.subject !== undefined) examData.subject = exam.subject;
+  if (exam.gradeClass !== undefined) examData.gradeClass = exam.gradeClass;
+  if (exam.durationMinutes !== undefined) examData.durationMinutes = Number(exam.durationMinutes) || 30;
+  if (exam.passCode !== undefined) examData.passCode = exam.passCode;
+  if (exam.isActive !== undefined) examData.isActive = Boolean(exam.isActive);
+  if (exam.antiCheatEnabled !== undefined) examData.antiCheatEnabled = Boolean(exam.antiCheatEnabled);
+  if (exam.maxViolations !== undefined) examData.maxViolations = Number(exam.maxViolations) || 3;
+  if (exam.randomizeQuestions !== undefined) examData.randomizeQuestions = Boolean(exam.randomizeQuestions);
+  if (exam.randomizeOptions !== undefined) examData.randomizeOptions = Boolean(exam.randomizeOptions);
+  if (exam.accessRestrictionType !== undefined) examData.accessRestrictionType = exam.accessRestrictionType;
+  if (exam.allowedClasses !== undefined) examData.allowedClasses = Array.isArray(exam.allowedClasses) ? exam.allowedClasses : [];
+  if (exam.allowedStudentNis !== undefined) examData.allowedStudentNis = Array.isArray(exam.allowedStudentNis) ? exam.allowedStudentNis : [];
+  if (exam.maxConcurrentParticipants !== undefined) examData.maxConcurrentParticipants = Number(exam.maxConcurrentParticipants) || 0;
+  if (exam.examSessionSchedule !== undefined) examData.examSessionSchedule = exam.examSessionSchedule;
+  if (exam.createdAt !== undefined) examData.createdAt = exam.createdAt;
+
+  // ONLY update questions & questionCount if questions array is explicitly provided
+  if (exam.questions !== undefined) {
+    const cleanQuestions = Array.isArray(exam.questions) ? exam.questions.map((q, idx) => {
+      const qObj: Record<string, any> = {
+        id: q.id || `q_${Date.now()}_${idx}`,
+        questionText: q.questionText || '',
+        options: Array.isArray(q.options) ? q.options.map(o => o || '') : [],
+        correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+        points: typeof q.points === 'number' ? q.points : 10,
+      };
+      if (q.explanation) qObj.explanation = q.explanation;
+      if (q.imageUrl) qObj.imageUrl = q.imageUrl;
+      return qObj;
+    }) : [];
+
+    examData.questions = cleanQuestions;
+    examData.questionCount = cleanQuestions.length;
+  }
+
+  // If this is a new document, ensure essential fields have valid initial defaults
+  const snap = await getDoc(examRef);
+  if (!snap.exists()) {
+    if (examData.title === undefined) examData.title = 'Asesmen Baru';
+    if (examData.subject === undefined) examData.subject = 'Mata Pelajaran';
+    if (examData.gradeClass === undefined) examData.gradeClass = 'Semua Kelas';
+    if (examData.durationMinutes === undefined) examData.durationMinutes = 30;
+    if (examData.passCode === undefined) examData.passCode = '123456';
+    if (examData.isActive === undefined) examData.isActive = true;
+    if (examData.antiCheatEnabled === undefined) examData.antiCheatEnabled = true;
+    if (examData.maxViolations === undefined) examData.maxViolations = 3;
+    if (examData.randomizeQuestions === undefined) examData.randomizeQuestions = true;
+    if (examData.randomizeOptions === undefined) examData.randomizeOptions = true;
+    if (examData.accessRestrictionType === undefined) examData.accessRestrictionType = 'all';
+    if (examData.allowedClasses === undefined) examData.allowedClasses = [];
+    if (examData.allowedStudentNis === undefined) examData.allowedStudentNis = [];
+    if (examData.maxConcurrentParticipants === undefined) examData.maxConcurrentParticipants = 0;
+    if (examData.examSessionSchedule === undefined) examData.examSessionSchedule = '';
+    if (examData.createdAt === undefined) examData.createdAt = new Date().toISOString();
+    if (examData.questions === undefined) {
+      examData.questions = [];
+      examData.questionCount = 0;
+    }
+  }
 
   // Strip any remaining undefined values recursively
   const sanitized = JSON.parse(JSON.stringify(examData));
 
-  await setDoc(doc(db, EXAMS_COLLECTION, examId), sanitized, { merge: true });
+  await setDoc(examRef, sanitized, { merge: true });
   return examId;
+}
+
+/**
+ * Update partial exam fields (e.g. access control, session limits) without touching questions
+ */
+export async function updateExam(examId: string, updates: Partial<Exam>): Promise<void> {
+  await saveExam({ id: examId, ...updates });
 }
 
 /**

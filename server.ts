@@ -55,43 +55,105 @@ Ketentuan Khusus Soal:
 5. Tentukan bobot poin per soal (misal: 20 poin per soal untuk 5 soal agar total 100).
 6. Bahasa yang digunakan adalah Bahasa Indonesia standar pendidikan.
 7. PENULISAN RUMUS, SIMBOL, DAN BENTUK MATEMATIKA / FISIKA / KIMIA:
-   - Setiap rumus, persamaan, variabel, pecahan, akar, eksponen, logaritma, matriks, atau bentuk geometri (seperti $\triangle ABC$, $\angle A$, $g_1 \parallel g_2$, $g_1 \perp g_2$, $30^\circ$, $\vec{v}$, $\alpha$, $\beta$, $\pi$, $\theta$, $\le$, $\ge$, $\neq$, $\pm$, $\sqrt{x}$, $\frac{a}{b}$, $y^2 = 8x$, $2x + y - 3 = 0$) WAJIB dibungkus secara terpisah dengan pembatas $ ... $ untuk inline math atau $$ ... $$ untuk display math.
+   - Setiap rumus, persamaan, variabel, pecahan, akar, eksponen, logaritma, matriks, atau bentuk geometri (seperti $\\triangle ABC$, $\\angle A$, $g_1 \\parallel g_2$, $g_1 \\perp g_2$, $30^\\circ$, $\\vec{v}$, $\\alpha$, $\\beta$, $\\pi$, $\\theta$, $\\le$, $\\ge$, $\\neq$, $\\pm$, $\\sqrt{x}$, $\\frac{a}{b}$, $y^2 = 8x$, $2x + y - 3 = 0$) WAJIB dibungkus secara terpisah dengan pembatas $ ... $ untuk inline math atau $$ ... $$ untuk display math.
    - DILARANG MENGGABUNGKAN dua rumus/persamaan berbeda tanpa kata penghubung Bahasa Indonesia (seperti "dan", "yang tegak lurus dengan", "dengan gradien"). Contoh SALAH: "$y^2 = 8x 2x + y = 0$", Contoh BENAR: "$y^2 = 8x$ yang tegak lurus garis $2x + y - 3 = 0$".
-   - Seluruh opsi jawaban (A, B, C, D, E) yang berupa angka, variabel, atau persamaan WAJIB dibungkus $ ... $ secara terpisah (contoh: "$x - 2y + 8 = 0$").`;
+   - Seluruh opsi jawaban (A, B, C, D, E) yang berupa angka, variabel, atau persamaan WAJIB dibungkus $ ... $ secara terpisah (contoh: "$x - 2y + 8 = 0$").
+8. KEBERSIHAN OPSI JAWABAN:
+   - Opsi jawaban hanya boleh memuat teks/rumus jawaban murni.
+   - DILARANG KERAS menyertakan kata penutup, watermark, atau label acak seperti "trilogy", "opsi", "jawaban", dsb.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: `Buatkan ${count} soal pilihan ganda tentang topik "${topic}" untuk mata pelajaran "${subject}" (${gradeClass}) tingkat kesulitan ${difficulty}.`,
-      config: {
-        systemInstruction: systemPrompt,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          description: 'Daftar soal pilihan ganda',
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              questionText: { type: Type.STRING, description: 'Pertanyaan / teks soal' },
-              options: {
-                type: Type.ARRAY,
-                description: 'Array berisi tepat 5 string opsi jawaban (A, B, C, D, E)',
-                items: { type: Type.STRING }
-              },
-              correctAnswer: { type: Type.INTEGER, description: 'Indeks jawaban benar (0=A, 1=B, 2=C, 3=D, 4=E)' },
-              points: { type: Type.INTEGER, description: 'Poin untuk soal ini' },
-              explanation: { type: Type.STRING, description: 'Pembahasan jawaban' }
-            },
-            required: ['questionText', 'options', 'correctAnswer', 'points', 'explanation']
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-3.7-flash'];
+    let response: any = null;
+    let lastError: any = null;
+
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    for (let i = 0; i < candidateModels.length; i++) {
+      const modelName = candidateModels[i];
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: `Buatkan ${count} soal pilihan ganda tentang topik "${topic}" untuk mata pelajaran "${subject}" (${gradeClass}) tingkat kesulitan ${difficulty}.`,
+          config: {
+            systemInstruction: systemPrompt,
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.ARRAY,
+              description: 'Daftar soal pilihan ganda',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  questionText: { type: Type.STRING, description: 'Pertanyaan / teks soal' },
+                  options: {
+                    type: Type.ARRAY,
+                    description: 'Array berisi tepat 5 string opsi jawaban (A, B, C, D, E)',
+                    items: { type: Type.STRING }
+                  },
+                  correctAnswer: { type: Type.INTEGER, description: 'Indeks jawaban benar (0=A, 1=B, 2=C, 3=D, 4=E)' },
+                  points: { type: Type.INTEGER, description: 'Poin untuk soal ini' },
+                  explanation: { type: Type.STRING, description: 'Pembahasan jawaban' }
+                },
+                required: ['questionText', 'options', 'correctAnswer', 'points', 'explanation']
+              }
+            }
           }
+        });
+        if (response && response.text) {
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Model ${modelName} error, trying next fallback:`, err?.message || err);
+        if (i < candidateModels.length - 1) {
+          await delay(600);
         }
       }
-    });
+    }
 
-    const jsonText = response.text || '[]';
-    const parsedQuestions = JSON.parse(jsonText);
+    if (!response || !response.text) {
+      let errorMsg = 'Layanan AI sedang sibuk atau mengalami lonjakan permintaan (High Demand). Silakan coba klik tombol Generate lagi.';
+      if (lastError?.message) {
+        try {
+          const parsed = JSON.parse(lastError.message);
+          if (parsed?.error?.message) {
+            errorMsg = `Layanan AI: ${parsed.error.message}`;
+          }
+        } catch {
+          errorMsg = lastError.message;
+        }
+      }
+      return res.status(503).json({ error: errorMsg });
+    }
+
+    let jsonText = (response.text || '[]').trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.replace(/^```json/, '').replace(/```$/, '').trim();
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```/, '').replace(/```$/, '').trim();
+    }
+
+    let parsedQuestions: any[] = [];
+    try {
+      parsedQuestions = JSON.parse(jsonText);
+    } catch (parseErr) {
+      console.error('Failed to parse AI JSON response:', jsonText);
+      return res.status(500).json({ error: 'Format respon dari model AI tidak valid. Silakan coba klik Generate lagi.' });
+    }
+
+    const sanitizeOption = (text: any): string => {
+      if (!text) return '';
+      let s = String(text).trim();
+      // Remove leading option letters like "A. ", "B) ", "(A) ", "A: "
+      s = s.replace(/^[A-Ea-e][\.\)\:\-]\s*/, '');
+      // Strip hallucinated words like "trilogy", "trilogies"
+      s = s.replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ');
+      return s.trim();
+    };
 
     const formattedQuestions = parsedQuestions.map((q: any, idx: number) => {
-      let opts = Array.isArray(q.options) ? q.options : [];
+      let rawOpts = Array.isArray(q.options) ? q.options : [];
+      let opts = rawOpts.map((opt: any) => sanitizeOption(opt));
+
       if (opts.length < 5) {
         while (opts.length < 5) {
           opts.push(`Pilihan ${String.fromCharCode(65 + opts.length)}`);
@@ -104,13 +166,21 @@ Ketentuan Khusus Soal:
         ? q.correctAnswer 
         : 0;
 
+      let cleanExplanation = String(q.explanation || '')
+        .replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ')
+        .trim();
+
+      let cleanQuestionText = String(q.questionText || `Soal ${idx + 1}`)
+        .replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ')
+        .trim();
+
       return {
         id: `ai_q_${Date.now()}_${idx + 1}`,
-        questionText: q.questionText || `Soal ${idx + 1}`,
+        questionText: cleanQuestionText,
         options: opts,
         correctAnswer: validCorrect,
         points: Number(q.points) || Math.round(100 / count),
-        explanation: q.explanation || ''
+        explanation: cleanExplanation
       };
     });
 

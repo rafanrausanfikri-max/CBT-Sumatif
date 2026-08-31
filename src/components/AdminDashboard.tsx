@@ -4,6 +4,7 @@ import { Exam, ExamSubmission, Question, Student } from '../types';
 import { compressBase64Image, compressEmbeddedImagesInText } from '../lib/imageUtils';
 import {
   saveExam,
+  updateExam,
   deleteExam,
   unlockStudentSubmission,
   forceSubmitStudentSubmission,
@@ -241,11 +242,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         throw new Error(data.error || 'Gagal menghasilkan soal dengan AI.');
       }
 
-      const qList: Question[] = data.questions || [];
+      const rawList: any[] = data.questions || [];
+      const qList: Question[] = rawList.map((q: any) => ({
+        ...q,
+        questionText: String(q.questionText || '')
+          .replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ')
+          .trim(),
+        options: (q.options || []).map((opt: string) =>
+          String(opt || '')
+            .replace(/^[A-Ea-e][\.\)\:\-]\s*/, '')
+            .replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ')
+            .trim()
+        ),
+        explanation: String(q.explanation || '')
+          .replace(/\s*\btrilog(?:y|ies)\b\s*/gi, ' ')
+          .trim()
+      }));
       setGeneratedAiQuestions(qList);
       setSelectedAiQuestionIds(qList.map(q => q.id));
     } catch (err: any) {
-      setAiErrorMsg(err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.');
+      let rawMsg = err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.';
+      try {
+        if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
+          const parsed = JSON.parse(rawMsg);
+          if (parsed?.error?.message) {
+            rawMsg = parsed.error.message;
+          } else if (parsed?.error) {
+            rawMsg = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error);
+          }
+        }
+      } catch {
+        // keep rawMsg
+      }
+      setAiErrorMsg(rawMsg);
     } finally {
       setIsGeneratingAi(false);
     }
@@ -2478,7 +2507,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <h3 className="font-extrabold text-lg text-white flex items-center space-x-2">
                   <span>Generator Soal Otomatis Berbasis AI</span>
                   <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-mono">
-                    Gemini 3.6 Flash
+                    Gemini AI Flash
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400">
@@ -2938,7 +2967,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         students={studentsList}
         classes={classesList}
         onSave={async (examId, updates) => {
-          await saveExam({ id: examId, ...updates });
+          await updateExam(examId, updates);
         }}
       />
 

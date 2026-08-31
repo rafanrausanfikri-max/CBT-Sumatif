@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Exam, Student } from '../types';
 import { subscribeStudents, subscribeClasses } from '../services/examService';
-import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School, Shuffle } from 'lucide-react';
+import { ShieldCheck, Play, Lock, FileText, Clock, AlertTriangle, Smartphone, CheckCircle2, UserCheck, School } from 'lucide-react';
 
 interface StudentPortalProps {
   exams: Exam[];
@@ -280,24 +280,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ exams, onStartExam
                         <span>Jumlah: <strong className="text-white">{selectedExam.questions?.length || selectedExam.questionCount} Soal</strong></span>
                       </div>
                     </div>
-                    
-                    {/* Randomization Badges */}
-                    {(selectedExam.randomizeQuestions !== false || selectedExam.randomizeOptions !== false) && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {selectedExam.randomizeQuestions !== false && (
-                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 flex items-center space-x-1.5">
-                            <Shuffle className="w-3.5 h-3.5 text-indigo-400" />
-                            <span>Urutan Soal Diacak</span>
-                          </span>
-                        )}
-                        {selectedExam.randomizeOptions !== false && (
-                          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 flex items-center space-x-1.5">
-                            <Shuffle className="w-3.5 h-3.5 text-purple-400" />
-                            <span>Pilihan Jawaban (A-E) Diacak</span>
-                          </span>
-                        )}
-                      </div>
-                    )}
 
                     {selectedExam.examSessionSchedule && (
                       <div className="bg-purple-950/40 border border-purple-800/40 px-3 py-1.5 rounded-xl text-purple-300 text-xs flex items-center justify-between">
