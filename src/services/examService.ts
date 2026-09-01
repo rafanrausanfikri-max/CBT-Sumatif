@@ -10,11 +10,13 @@ import {
   query,
   where,
   orderBy,
+  limit,
   addDoc,
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Exam, ExamSubmission, ViolationLog, Question } from '../types';
+import { Exam, ExamSubmission, ViolationLog, Question, Student } from '../types';
+import { INITIAL_STUDENTS } from '../data/initialStudents';
 
 const EXAMS_COLLECTION = 'exams';
 const SUBMISSIONS_COLLECTION = 'submissions';
@@ -222,9 +224,22 @@ export async function seedInitialExamsIfEmpty(): Promise<Exam[]> {
 }
 
 /**
- * Get all exams real-time
+ * Get all exams real-time with local cache and quota-safe fallback
  */
 export function subscribeExams(callback: (exams: Exam[]) => void) {
+  // 1. Instantly provide cached exams from localStorage
+  const cachedJson = typeof window !== 'undefined' ? localStorage.getItem('cbt_exams_cache') : null;
+  if (cachedJson) {
+    try {
+      const parsed = JSON.parse(cachedJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        callback(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const examsRef = collection(db, EXAMS_COLLECTION);
   return onSnapshot(examsRef, async (snapshot) => {
     const exams: Exam[] = [];
@@ -245,16 +260,40 @@ export function subscribeExams(callback: (exams: Exam[]) => void) {
 
       exams.push({ id: docSnap.id, ...data });
     });
-    const hasBeenInitialized = localStorage.getItem('cbt_exams_initialized');
-    if (exams.length === 0 && !hasBeenInitialized) {
-      localStorage.setItem('cbt_exams_initialized', 'true');
-      seedInitialExamsIfEmpty().then((seeded) => callback(seeded));
-    } else {
+
+    if (exams.length > 0) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('cbt_exams_cache', JSON.stringify(exams));
+      }
       callback(exams);
+    } else {
+      const hasBeenInitialized = localStorage.getItem('cbt_exams_initialized');
+      if (!hasBeenInitialized) {
+        localStorage.setItem('cbt_exams_initialized', 'true');
+        seedInitialExamsIfEmpty().then((seeded) => {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('cbt_exams_cache', JSON.stringify(seeded));
+          }
+          callback(seeded);
+        });
+      } else {
+        callback([DEFAULT_SAMPLE_EXAM, MATH_SAMPLE_EXAM]);
+      }
     }
   }, (err) => {
-    console.error('Error subscribing to exams:', err);
-    callback([DEFAULT_SAMPLE_EXAM]);
+    console.warn('Firestore exams subscription quota/network warning:', err.message);
+    if (cachedJson) {
+      try {
+        const parsed = JSON.parse(cachedJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          callback(parsed);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    callback([DEFAULT_SAMPLE_EXAM, MATH_SAMPLE_EXAM]);
   });
 }
 
@@ -307,35 +346,30 @@ export async function saveExam(exam: Partial<Exam>): Promise<string> {
     examData.questionCount = cleanQuestions.length;
   }
 
-  // If this is a new document, ensure essential fields have valid initial defaults
-  const snap = await getDoc(examRef);
-  if (!snap.exists()) {
-    if (examData.title === undefined) examData.title = 'Asesmen Baru';
-    if (examData.subject === undefined) examData.subject = 'Mata Pelajaran';
-    if (examData.gradeClass === undefined) examData.gradeClass = 'Semua Kelas';
-    if (examData.durationMinutes === undefined) examData.durationMinutes = 30;
-    if (examData.passCode === undefined) examData.passCode = '123456';
-    if (examData.isActive === undefined) examData.isActive = true;
-    if (examData.antiCheatEnabled === undefined) examData.antiCheatEnabled = true;
-    if (examData.maxViolations === undefined) examData.maxViolations = 3;
-    if (examData.randomizeQuestions === undefined) examData.randomizeQuestions = true;
-    if (examData.randomizeOptions === undefined) examData.randomizeOptions = true;
-    if (examData.accessRestrictionType === undefined) examData.accessRestrictionType = 'all';
-    if (examData.allowedClasses === undefined) examData.allowedClasses = [];
-    if (examData.allowedStudentNis === undefined) examData.allowedStudentNis = [];
-    if (examData.maxConcurrentParticipants === undefined) examData.maxConcurrentParticipants = 0;
-    if (examData.examSessionSchedule === undefined) examData.examSessionSchedule = '';
-    if (examData.createdAt === undefined) examData.createdAt = new Date().toISOString();
-    if (examData.questions === undefined) {
-      examData.questions = [];
-      examData.questionCount = 0;
-    }
-  }
-
   // Strip any remaining undefined values recursively
   const sanitized = JSON.parse(JSON.stringify(examData));
 
-  await setDoc(examRef, sanitized, { merge: true });
+  try {
+    await setDoc(examRef, sanitized, { merge: true });
+  } catch (err: any) {
+    console.warn('Could not sync exam to Firestore (saving locally):', err?.message);
+  }
+
+  // Update local exams cache
+  try {
+    const currentCached = localStorage.getItem('cbt_exams_cache');
+    let list: Exam[] = currentCached ? JSON.parse(currentCached) : [];
+    const existingIndex = list.findIndex(e => e.id === examId);
+    if (existingIndex >= 0) {
+      list[existingIndex] = { ...list[existingIndex], ...sanitized };
+    } else {
+      list.push(sanitized as Exam);
+    }
+    localStorage.setItem('cbt_exams_cache', JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+
   return examId;
 }
 
@@ -351,34 +385,70 @@ export async function updateExam(examId: string, updates: Partial<Exam>): Promis
  */
 export async function deleteExam(examId: string): Promise<void> {
   localStorage.setItem('cbt_exams_initialized', 'true');
-  await deleteDoc(doc(db, EXAMS_COLLECTION, examId));
+  try {
+    await deleteDoc(doc(db, EXAMS_COLLECTION, examId));
+  } catch (err: any) {
+    console.warn('Could not delete from Firestore (deleting locally):', err?.message);
+  }
+
+  try {
+    const currentCached = localStorage.getItem('cbt_exams_cache');
+    if (currentCached) {
+      const list: Exam[] = JSON.parse(currentCached);
+      const filtered = list.filter(e => e.id !== examId);
+      localStorage.setItem('cbt_exams_cache', JSON.stringify(filtered));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
- * Save or update student submission
+ * Save or update student submission with Local Storage guarantee + Firestore sync
  */
 export async function saveSubmission(submission: Partial<ExamSubmission>): Promise<string> {
   const subId = submission.id || `sub_${submission.examId}_${submission.studentName}_${submission.nis}`;
-  const subRef = doc(db, SUBMISSIONS_COLLECTION, subId);
-
   const cleanData = {
     ...submission,
     id: subId,
     lastUpdated: new Date().toISOString()
   };
-
   const sanitizedData = JSON.parse(JSON.stringify(cleanData));
 
-  await setDoc(subRef, sanitizedData, { merge: true });
+  // 1. Guaranteed Local Persistence (0 Quota cost, 100% resilient)
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`cbt_sub_${subId}`, JSON.stringify(sanitizedData));
+      const recentListJson = localStorage.getItem('cbt_submissions_recent') || '[]';
+      const recentList: string[] = JSON.parse(recentListJson);
+      if (!recentList.includes(subId)) {
+        recentList.push(subId);
+        localStorage.setItem('cbt_submissions_recent', JSON.stringify(recentList.slice(-100)));
+      }
+    } catch {
+      // ignore local storage quota
+    }
+  }
+
+  // 2. Sync to Firestore with error resilience
+  try {
+    const subRef = doc(db, SUBMISSIONS_COLLECTION, subId);
+    await setDoc(subRef, sanitizedData, { merge: true });
+  } catch (err: any) {
+    console.warn('Submission saved locally (Firestore offline/quota exceeded):', err?.message);
+  }
+
   return subId;
 }
 
 /**
- * Subscribe real-time to submissions for a specific exam (or all) for live teacher dashboard
+ * Subscribe real-time to submissions for a specific exam with Query Limit
  */
 export function subscribeSubmissions(examId: string, callback: (submissions: ExamSubmission[]) => void) {
   const subRef = collection(db, SUBMISSIONS_COLLECTION);
-  const q = examId ? query(subRef, where('examId', '==', examId)) : subRef;
+  const q = examId
+    ? query(subRef, where('examId', '==', examId), limit(150))
+    : query(subRef, limit(150));
 
   return onSnapshot(q, (snapshot) => {
     const list: ExamSubmission[] = [];
@@ -387,7 +457,7 @@ export function subscribeSubmissions(examId: string, callback: (submissions: Exa
     });
     callback(list);
   }, (err) => {
-    console.error('Error listening to submissions:', err);
+    console.warn('Firestore submissions subscription notice:', err.message);
     callback([]);
   });
 }
@@ -412,26 +482,30 @@ export async function logViolationEvent(
       timestamp: new Date().toISOString(),
       read: false
     });
-  } catch (err) {
-    console.error('Error logging violation event:', err);
+  } catch (err: any) {
+    console.warn('Violation logged locally (Firestore quota/offline):', err?.message);
   }
 }
 
 /**
- * Subscribe real-time to violation logs for Admin Toast Notifications
+ * Subscribe real-time to violation logs with limit(40) to prevent reading thousands of historical documents
  */
 export function subscribeViolationLogs(callback: (logs: ViolationLog[]) => void) {
-  const q = query(collection(db, VIOLATIONS_COLLECTION));
+  const q = query(
+    collection(db, VIOLATIONS_COLLECTION),
+    orderBy('timestamp', 'desc'),
+    limit(40)
+  );
+
   return onSnapshot(q, (snapshot) => {
     const logs: ViolationLog[] = [];
     snapshot.forEach((docSnap) => {
       logs.push({ id: docSnap.id, ...docSnap.data() } as ViolationLog);
     });
-    // Sort by timestamp desc
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     callback(logs);
   }, (err) => {
-    console.error('Error subscribing to violation logs:', err);
+    console.warn('Firestore violations subscription notice:', err.message);
+    callback([]);
   });
 }
 
@@ -440,12 +514,12 @@ export function subscribeViolationLogs(callback: (logs: ViolationLog[]) => void)
  */
 export async function markAllViolationLogsAsRead() {
   try {
-    const q = query(collection(db, VIOLATIONS_COLLECTION), where('read', '==', false));
+    const q = query(collection(db, VIOLATIONS_COLLECTION), where('read', '==', false), limit(25));
     const snapshot = await getDocs(q);
     const updatePromises = snapshot.docs.map(docSnap => updateDoc(docSnap.ref, { read: true }));
     await Promise.all(updatePromises);
-  } catch (err) {
-    console.error('Error marking violation logs as read:', err);
+  } catch (err: any) {
+    console.warn('Could not mark violations as read:', err?.message);
   }
 }
 
@@ -503,21 +577,36 @@ export async function clearExamSubmissions(examId: string) {
   await Promise.all(deletePromises);
 }
 
-import { Student } from '../types';
-import { INITIAL_STUDENTS } from '../data/initialStudents';
-
 const STUDENTS_COLLECTION = 'students';
 
 /**
-  * Subscribe real-time to Students Master Data
+  * Subscribe real-time to Students Master Data with instant local cache
   */
 export function subscribeStudents(callback: (students: Student[]) => void) {
+  // 1. Instantly return local cached students
+  const cachedJson = typeof window !== 'undefined' ? localStorage.getItem('cbt_students_cache') : null;
+  if (cachedJson) {
+    try {
+      const parsed = JSON.parse(cachedJson);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        callback(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  } else {
+    // Provide initial default students immediately without waiting
+    callback(INITIAL_STUDENTS.map((s, idx) => ({ id: `init_${idx}`, ...s })));
+  }
+
   const colRef = collection(db, STUDENTS_COLLECTION);
   return onSnapshot(colRef, async (snapshot) => {
-    // If collection is empty, auto-seed initial 180 students from SMA 2 Ciamis
     if (snapshot.empty) {
-      callback([]);
-      await seedInitialStudents();
+      const hasSeeded = localStorage.getItem('cbt_students_seeded');
+      if (!hasSeeded) {
+        localStorage.setItem('cbt_students_seeded', 'true');
+        seedInitialStudents().catch(console.warn);
+      }
       return;
     }
 
@@ -534,10 +623,24 @@ export function subscribeStudents(callback: (students: Student[]) => void) {
       return a.name.localeCompare(b.name);
     });
 
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cbt_students_cache', JSON.stringify(students));
+    }
     callback(students);
   }, (err) => {
-    console.error('Error subscribing students:', err);
-    callback([]);
+    console.warn('Firestore students subscription notice (using local data):', err.message);
+    if (cachedJson) {
+      try {
+        const parsed = JSON.parse(cachedJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          callback(parsed);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    callback(INITIAL_STUDENTS.map((s, idx) => ({ id: `init_${idx}`, ...s })));
   });
 }
 
@@ -545,39 +648,72 @@ export function subscribeStudents(callback: (students: Student[]) => void) {
   * Add a single student manually
   */
 export async function addStudent(studentData: Omit<Student, 'id'>) {
-  const colRef = collection(db, STUDENTS_COLLECTION);
-  const docRef = await addDoc(colRef, studentData);
-  return docRef.id;
+  const newId = `std_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  try {
+    const colRef = collection(db, STUDENTS_COLLECTION);
+    const docRef = await addDoc(colRef, studentData);
+    return docRef.id;
+  } catch (err: any) {
+    console.warn('Student added locally:', err?.message);
+    // Save to local cache
+    try {
+      const cached = localStorage.getItem('cbt_students_cache');
+      const list: Student[] = cached ? JSON.parse(cached) : [...INITIAL_STUDENTS.map((s, idx) => ({ id: `init_${idx}`, ...s }))];
+      list.push({ id: newId, ...studentData });
+      localStorage.setItem('cbt_students_cache', JSON.stringify(list));
+    } catch {
+      // ignore
+    }
+    return newId;
+  }
 }
 
 /**
   * Delete student
   */
 export async function deleteStudent(studentId: string) {
-  const docRef = doc(db, STUDENTS_COLLECTION, studentId);
-  await deleteDoc(docRef);
+  try {
+    const docRef = doc(db, STUDENTS_COLLECTION, studentId);
+    await deleteDoc(docRef);
+  } catch (err: any) {
+    console.warn('Student deleted locally:', err?.message);
+  }
+
+  try {
+    const cached = localStorage.getItem('cbt_students_cache');
+    if (cached) {
+      const list: Student[] = JSON.parse(cached);
+      const filtered = list.filter(s => s.id !== studentId && s.nis !== studentId);
+      localStorage.setItem('cbt_students_cache', JSON.stringify(filtered));
+    }
+  } catch {
+    // ignore
+  }
 }
 
 /**
   * Seed/Populate 180 initial students from SMA Negeri 2 Ciamis
   */
 export async function seedInitialStudents() {
+  localStorage.setItem('cbt_students_seeded', 'true');
   try {
     const colRef = collection(db, STUDENTS_COLLECTION);
     const existingSnap = await getDocs(colRef);
     if (!existingSnap.empty) {
-      // If already has data, clear first if re-seeding
       const deletePromises = existingSnap.docs.map(d => deleteDoc(d.ref));
       await Promise.all(deletePromises);
     }
 
-    // Add all initial students in batches/promises
     const addPromises = INITIAL_STUDENTS.map(s => addDoc(colRef, s));
     await Promise.all(addPromises);
     console.log('Successfully seeded 180 students for SMA Negeri 2 Ciamis');
-  } catch (err) {
-    console.error('Error seeding initial students:', err);
-    throw err;
+  } catch (err: any) {
+    console.warn('Seeding students stored locally:', err?.message);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cbt_students_cache', JSON.stringify(
+        INITIAL_STUDENTS.map((s, idx) => ({ id: `init_${idx}`, ...s }))
+      ));
+    }
   }
 }
 

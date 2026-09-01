@@ -172,6 +172,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [aiErrorMsg, setAiErrorMsg] = useState('');
   const [generatedAiQuestions, setGeneratedAiQuestions] = useState<Question[]>([]);
   const [selectedAiQuestionIds, setSelectedAiQuestionIds] = useState<string[]>([]);
+  const [bulkPointsValue, setBulkPointsValue] = useState<number>(10);
+
+  const handleApplyBulkPoints = () => {
+    const val = Math.max(1, bulkPointsValue || 10);
+    setQuestionsList(prev => prev.map(q => ({ ...q, points: val })));
+  };
+
+  const handleDistributePointsEvenly = () => {
+    if (questionsList.length === 0) return;
+    const count = questionsList.length;
+    const basePoint = Math.floor(100 / count);
+    const remainder = 100 % count;
+    setQuestionsList(prev => prev.map((q, idx) => ({
+      ...q,
+      points: basePoint + (idx < remainder ? 1 : 0)
+    })));
+  };
 
   const handleSaveNewPin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,7 +254,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         })
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(`Gagal memuat respon AI (Status: ${response.status}). Silakan coba beberapa saat lagi.`);
+      }
+
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Gagal menghasilkan soal dengan AI.');
       }
@@ -261,7 +285,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setGeneratedAiQuestions(qList);
       setSelectedAiQuestionIds(qList.map(q => q.id));
     } catch (err: any) {
-      setAiErrorMsg(err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.');
+      let rawMsg = err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.';
+      try {
+        if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
+          const parsed = JSON.parse(rawMsg);
+          if (parsed?.error?.message) {
+            rawMsg = parsed.error.message;
+          } else if (parsed?.error) {
+            rawMsg = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error);
+          }
+        }
+      } catch {
+        // keep rawMsg
+      }
+      setAiErrorMsg(rawMsg);
     } finally {
       setIsGeneratingAi(false);
     }
@@ -1716,8 +1753,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               {/* QUESTIONS LIST EDITOR */}
               <div className="space-y-4 border-t border-slate-800 pt-4">
-                <div className="flex justify-between items-center">
-                  <h4 className="font-bold text-sm text-white">Daftar Item Soal ({questionsList.length})</h4>
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                  <div className="flex items-center space-x-2">
+                    <h4 className="font-bold text-sm text-white">Daftar Item Soal ({questionsList.length})</h4>
+                    <span className="text-xs bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-semibold">
+                      Total: {questionsList.reduce((acc, curr) => acc + (typeof curr.points === 'number' ? curr.points : 10), 0)} Poin
+                    </span>
+                  </div>
                   <div className="flex items-center space-x-2">
                     <button
                       type="button"
@@ -1742,11 +1784,67 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
 
+                {/* Bulk Points Toolbar */}
+                {questionsList.length > 0 && (
+                  <div className="bg-slate-900/60 border border-slate-800 p-2.5 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-slate-400 font-medium text-[11px]">Atur Cepat Bobot Soal:</span>
+                      <div className="flex items-center space-x-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={bulkPointsValue}
+                          onChange={(e) => setBulkPointsValue(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-14 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-center font-bold text-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                        <span className="text-slate-400 text-[11px]">Poin</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleApplyBulkPoints}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold rounded border border-slate-700 transition"
+                      >
+                        Terapkan ke Semua
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDistributePointsEvenly}
+                      className="px-2.5 py-1 bg-indigo-950/40 hover:bg-indigo-900/50 text-indigo-300 font-semibold rounded border border-indigo-500/30 transition text-[11px]"
+                      title="Bagi rata poin ke seluruh soal agar akumulasi total pas 100 poin"
+                    >
+                      ⚖️ Bagi Rata Total 100 Poin
+                    </button>
+                  </div>
+                )}
+
                 <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
                   {questionsList.map((q, qIdx) => (
                     <div key={q.id} className="bg-slate-800/50 border border-slate-700/80 rounded-xl p-4 space-y-3 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-indigo-400">Soal #{qIdx + 1}</span>
+                      <div className="flex flex-wrap gap-2 justify-between items-center pb-2 border-b border-slate-700/60">
+                        <div className="flex items-center space-x-3">
+                          <span className="font-bold text-indigo-400">Soal #{qIdx + 1}</span>
+                          <div className="flex items-center space-x-1.5 bg-slate-900/90 border border-slate-700/80 px-2.5 py-1 rounded-lg">
+                            <label className="text-[11px] text-slate-300 font-medium flex items-center space-x-1">
+                              <span className="text-amber-400 font-bold">★</span>
+                              <span>Bobot:</span>
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={typeof q.points === 'number' ? q.points : 10}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const val = raw === '' ? 0 : Math.max(0, parseInt(raw) || 0);
+                                setQuestionsList(prev => prev.map((item, idx) => idx === qIdx ? { ...item, points: val } : item));
+                              }}
+                              className="w-14 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-center text-xs font-extrabold text-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                            <span className="text-[10px] text-slate-400 font-mono">Poin</span>
+                          </div>
+                        </div>
                         <button
                           type="button"
                           onClick={() => setQuestionsList(prev => prev.filter((_, idx) => idx !== qIdx))}
@@ -2493,8 +2591,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div>
                 <h3 className="font-extrabold text-lg text-white flex items-center space-x-2">
                   <span>Generator Soal Otomatis Berbasis AI</span>
-                  <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-mono">
-                    Gemini 3.6 Flash
+                  <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-mono font-semibold">
+                    Gemini Flash Lite
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400">
@@ -2654,9 +2752,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-purple-300">
-                              Soal #{idx + 1} ({q.points} Poin)
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-extrabold text-purple-300">
+                                Soal #{idx + 1}
+                              </span>
+                              <div
+                                className="flex items-center space-x-1 bg-slate-900/90 border border-purple-500/30 px-2 py-0.5 rounded-md"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <span className="text-[10px] text-purple-300 font-medium">Bobot:</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={typeof q.points === 'number' ? q.points : 10}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    const val = raw === '' ? 0 : Math.max(0, parseInt(raw) || 0);
+                                    setGeneratedAiQuestions(prev => prev.map((item, i) => i === idx ? { ...item, points: val } : item));
+                                  }}
+                                  className="w-12 bg-slate-800 border border-purple-500/40 text-amber-300 text-center text-xs font-bold rounded px-1 py-0.5 focus:outline-none"
+                                />
+                                <span className="text-[10px] text-slate-400">Poin</span>
+                              </div>
+                            </div>
                           </div>
                           <div className="font-semibold text-white">
                             <MathText text={q.questionText} />

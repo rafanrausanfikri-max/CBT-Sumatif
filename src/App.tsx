@@ -52,24 +52,34 @@ export default function App() {
     return () => unsubExams();
   }, []);
 
-  // Subscribe to Submissions real-time
+  // Subscribe to Submissions real-time ONLY in admin mode to save Firestore quota
   useEffect(() => {
+    if (mode !== 'admin') {
+      setSubmissions([]);
+      return;
+    }
+
     const unsubSubmissions = subscribeSubmissions(selectedExamId, (loadedSubs) => {
       setSubmissions(loadedSubs);
     });
 
     return () => unsubSubmissions();
-  }, [selectedExamId]);
+  }, [selectedExamId, mode]);
 
-  // Subscribe to Violation logs count
+  // Subscribe to Violation logs count ONLY in admin mode
   useEffect(() => {
+    if (mode !== 'admin') {
+      setUnreadViolationsCount(0);
+      return;
+    }
+
     const unsubLogs = subscribeViolationLogs((logs) => {
       const recentCount = logs.filter(l => !l.read).length;
       setUnreadViolationsCount(recentCount);
     });
 
     return () => unsubLogs();
-  }, []);
+  }, [mode]);
 
   // Clear unread violation count when teacher is in admin mode
   useEffect(() => {

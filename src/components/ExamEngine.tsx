@@ -289,8 +289,8 @@ export const ExamEngine: React.FC<ExamEngineProps> = ({
           return 0;
         }
         const nextSec = prev - 1;
-        // Auto-sync every 15 seconds
-        if (nextSec % 15 === 0) {
+        // Auto-sync periodically every 60 seconds (instead of 15s) to conserve Firebase quota
+        if (nextSec % 60 === 0) {
           syncSubmissionToFirestore(answers, nextSec, violationCount, violations, isLocked, lockReason);
         }
         return nextSec;
