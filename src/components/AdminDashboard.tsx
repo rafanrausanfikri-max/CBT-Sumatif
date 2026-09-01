@@ -261,20 +261,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setGeneratedAiQuestions(qList);
       setSelectedAiQuestionIds(qList.map(q => q.id));
     } catch (err: any) {
-      let rawMsg = err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.';
-      try {
-        if (rawMsg.startsWith('{') && rawMsg.endsWith('}')) {
-          const parsed = JSON.parse(rawMsg);
-          if (parsed?.error?.message) {
-            rawMsg = parsed.error.message;
-          } else if (parsed?.error) {
-            rawMsg = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error);
-          }
-        }
-      } catch {
-        // keep rawMsg
-      }
-      setAiErrorMsg(rawMsg);
+      setAiErrorMsg(err?.message || 'Terjadi kesalahan saat membuat soal dengan AI.');
     } finally {
       setIsGeneratingAi(false);
     }
@@ -2507,7 +2494,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <h3 className="font-extrabold text-lg text-white flex items-center space-x-2">
                   <span>Generator Soal Otomatis Berbasis AI</span>
                   <span className="text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-full font-mono">
-                    Gemini AI Flash
+                    Gemini 3.6 Flash
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400">

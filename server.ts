@@ -62,14 +62,11 @@ Ketentuan Khusus Soal:
    - Opsi jawaban hanya boleh memuat teks/rumus jawaban murni.
    - DILARANG KERAS menyertakan kata penutup, watermark, atau label acak seperti "trilogy", "opsi", "jawaban", dsb.`;
 
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-3.7-flash'];
+    const candidateModels = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
     let response: any = null;
     let lastError: any = null;
 
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    for (let i = 0; i < candidateModels.length; i++) {
-      const modelName = candidateModels[i];
+    for (const modelName of candidateModels) {
       try {
         response = await ai.models.generateContent({
           model: modelName,
@@ -104,41 +101,15 @@ Ketentuan Khusus Soal:
       } catch (err: any) {
         lastError = err;
         console.warn(`Model ${modelName} error, trying next fallback:`, err?.message || err);
-        if (i < candidateModels.length - 1) {
-          await delay(600);
-        }
       }
     }
 
     if (!response || !response.text) {
-      let errorMsg = 'Layanan AI sedang sibuk atau mengalami lonjakan permintaan (High Demand). Silakan coba klik tombol Generate lagi.';
-      if (lastError?.message) {
-        try {
-          const parsed = JSON.parse(lastError.message);
-          if (parsed?.error?.message) {
-            errorMsg = `Layanan AI: ${parsed.error.message}`;
-          }
-        } catch {
-          errorMsg = lastError.message;
-        }
-      }
-      return res.status(503).json({ error: errorMsg });
+      throw lastError || new Error('Gagal mendapatkan respon dari AI model.');
     }
 
-    let jsonText = (response.text || '[]').trim();
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-
-    let parsedQuestions: any[] = [];
-    try {
-      parsedQuestions = JSON.parse(jsonText);
-    } catch (parseErr) {
-      console.error('Failed to parse AI JSON response:', jsonText);
-      return res.status(500).json({ error: 'Format respon dari model AI tidak valid. Silakan coba klik Generate lagi.' });
-    }
+    const jsonText = response.text || '[]';
+    const parsedQuestions = JSON.parse(jsonText);
 
     const sanitizeOption = (text: any): string => {
       if (!text) return '';
