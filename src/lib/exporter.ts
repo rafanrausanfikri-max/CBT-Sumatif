@@ -142,3 +142,135 @@ export function exportSubmissionsToPDF(submissions: ExamSubmission[], examTitle:
   const safeFileName = examTitle.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Laporan_Nilai_${safeFileName}.pdf`);
 }
+
+/**
+ * Export Item Analysis (Analisis Butir Soal) to Excel
+ */
+export function exportItemAnalysisToExcel(
+  analysis: import('./itemAnalysis').ExamOverallAnalysis,
+  examTitle: string
+) {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Rangkuman & Parameter Asesmen
+  const summaryData = [
+    { 'Parameter': 'Judul Asesmen', 'Nilai': analysis.examTitle },
+    { 'Parameter': 'Jumlah Siswa Mengerjakan', 'Nilai': analysis.totalSubmissions },
+    { 'Parameter': 'Jumlah Butir Soal', 'Nilai': analysis.itemCount },
+    { 'Parameter': 'Nilai Rata-rata', 'Nilai': analysis.averageScore },
+    { 'Parameter': 'Nilai Tertinggi', 'Nilai': analysis.highestScore },
+    { 'Parameter': 'Nilai Terendah', 'Nilai': analysis.lowestScore },
+    { 'Parameter': 'Estimasi Reliabilitas Tes (KR-20)', 'Nilai': `${analysis.reliabilityEstimate} (${analysis.reliabilityCategory})` },
+    { 'Parameter': 'Distribusi Kesukaran (Sangat Sukar / Sukar / Sedang / Mudah / Sangat Mudah)', 'Nilai': `${analysis.difficultySummary.sangatSukar} / ${analysis.difficultySummary.sukar} / ${analysis.difficultySummary.sedang} / ${analysis.difficultySummary.mudah} / ${analysis.difficultySummary.sangatMudah}` },
+    { 'Parameter': 'Distribusi Daya Pembeda (Sangat Baik / Baik / Cukup / Jelek / Sangat Jelek)', 'Nilai': `${analysis.discriminationSummary.sangatBaik} / ${analysis.discriminationSummary.baik} / ${analysis.discriminationSummary.cukup} / ${analysis.discriminationSummary.jelek} / ${analysis.discriminationSummary.sangatJelek}` },
+  ];
+  const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan Asesmen');
+
+  // Sheet 2: Analisis Butir Soal Detail
+  const letters = ['A', 'B', 'C', 'D', 'E'];
+  const itemsData = analysis.items.map(item => {
+    const row: Record<string, any> = {
+      'No Soal': item.questionNumber,
+      'Teks Soal': item.questionText.substring(0, 100) + (item.questionText.length > 100 ? '...' : ''),
+      'Bobot Poin': item.points,
+      'Kunci Jawaban': letters[item.correctAnswer] || item.correctAnswer,
+      'Jml Menjawab Benar': item.correctCount,
+      'Jml Menjawab Salah': item.incorrectCount,
+      'Jml Kosong': item.blankCount,
+      'Tingkat Kesukaran (P)': item.difficultyIndex,
+      'Kategori Kesukaran': item.difficultyCategory,
+      'Daya Pembeda (D)': item.discriminationIndex,
+      'Kategori Pembeda': item.discriminationCategory,
+      'Rekomendasi Butir': item.recommendation,
+      'Catatan Evaluasi': item.recommendationNote
+    };
+
+    // Distractor percentages
+    item.distractors.forEach((d, dIdx) => {
+      row[`Opsi ${d.optionLabel} (%)`] = `${d.percentage}% (${d.count} siswa)${d.isCorrect ? ' [KUNCI]' : ''}`;
+    });
+
+    return row;
+  });
+
+  const wsItems = XLSX.utils.json_to_sheet(itemsData);
+  XLSX.utils.book_append_sheet(wb, wsItems, 'Analisis Butir Soal');
+
+  const safeFileName = examTitle.replace(/[^a-zA-Z0-9]/g, '_');
+  XLSX.writeFile(wb, `Analisis_Butir_Soal_${safeFileName}.xlsx`);
+}
+
+/**
+ * Export Item Analysis (Analisis Butir Soal) to PDF
+ */
+export function exportItemAnalysisToPdf(
+  analysis: import('./itemAnalysis').ExamOverallAnalysis,
+  examTitle: string
+) {
+  const doc = new jsPDF({ orientation: 'landscape' });
+  const letters = ['A', 'B', 'C', 'D', 'E'];
+
+  // Header Title
+  doc.setFontSize(16);
+  doc.setTextColor(15, 23, 42);
+  doc.text('LAPORAN ANALISIS BUTIR SOAL ASESMEN (CBT)', 14, 15);
+
+  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Judul Asesmen: ${examTitle}`, 14, 23);
+  doc.text(`Total Peserta: ${analysis.totalSubmissions} Siswa  |  Jumlah Soal: ${analysis.itemCount} Butir  |  Rata-rata: ${analysis.averageScore}  |  Reliabilitas: ${analysis.reliabilityEstimate} (${analysis.reliabilityCategory})`, 14, 29);
+
+  const tableHead = [
+    ['No', 'Kunci', 'Poin', 'Benar/Salah', 'Indeks Sukar (P)', 'Kategori Sukar', 'Daya Pembeda (D)', 'Kategori Pembeda', 'Rekomendasi', 'Catatan Evaluasi']
+  ];
+
+  const tableRows = analysis.items.map(it => [
+    it.questionNumber,
+    letters[it.correctAnswer] || it.correctAnswer,
+    it.points,
+    `${it.correctCount} / ${it.incorrectCount}`,
+    it.difficultyIndex.toFixed(2),
+    it.difficultyCategory,
+    it.discriminationIndex.toFixed(2),
+    it.discriminationCategory,
+    it.recommendation,
+    it.recommendationNote
+  ]);
+
+  autoTable(doc, {
+    startY: 35,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59], // Slate 800
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [51, 65, 85]
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252]
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 14, halign: 'center' },
+      2: { cellWidth: 14, halign: 'center' },
+      3: { cellWidth: 24, halign: 'center' },
+      4: { cellWidth: 26, halign: 'center' },
+      5: { cellWidth: 28 },
+      6: { cellWidth: 28, halign: 'center' },
+      7: { cellWidth: 28 },
+      8: { cellWidth: 32 },
+      9: { cellWidth: 65 }
+    }
+  });
+
+  const safeFileName = examTitle.replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Analisis_Butir_Soal_${safeFileName}.pdf`);
+}
+

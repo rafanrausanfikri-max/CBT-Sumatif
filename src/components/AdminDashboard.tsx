@@ -54,9 +54,11 @@ import {
   GraduationCap,
   Users as UsersIcon,
   X,
-  Shuffle
+  Shuffle,
+  BarChart3
 } from 'lucide-react';
 import { ParticipantAccessModal } from './ParticipantAccessModal';
+import { ItemAnalysisDashboard } from './ItemAnalysisDashboard';
 
 interface AdminDashboardProps {
   exams: Exam[];
@@ -75,7 +77,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   adminPin,
   onChangeAdminPin
 }) => {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'exams' | 'reports' | 'students'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'exams' | 'reports' | 'analysis' | 'students'>('monitoring');
   const [searchQuery, setSearchQuery] = useState('');
   const [showExamModal, setShowExamModal] = useState(false);
   const [editingExam, setEditingExam] = useState<Partial<Exam> | null>(null);
@@ -736,6 +738,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         >
           <FileSpreadsheet className="w-4 h-4" />
           <span>Laporan Nilai & Ekspor</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('analysis')}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            activeTab === 'analysis'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4 text-purple-400" />
+          <span>Analisis Butir Soal</span>
         </button>
 
         <button
@@ -1503,6 +1517,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             );
           })()}
         </div>
+      )}
+
+      {/* TAB 4: ITEM ANALYSIS (ANALISIS BUTIR SOAL) */}
+      {activeTab === 'analysis' && (
+        <ItemAnalysisDashboard
+          exams={exams}
+          submissions={submissions}
+          selectedExamId={selectedExamId}
+          onSelectExamId={onSelectExamId}
+        />
       )}
 
       {/* CREATE / EDIT EXAM MODAL WITH IMPORT FEATURE */}
